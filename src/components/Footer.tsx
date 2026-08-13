@@ -1,0 +1,72 @@
+import { Link } from 'react-router-dom'
+import { Logo } from '@/components/Logo'
+
+const productLinks = [
+  { label: 'Wallet Explorer', to: '/' },
+  { label: 'Fund Flow Tracer', to: '/' },
+  { label: 'Entity Labels', to: '/' },
+]
+
+const resourceLinks = [
+  { label: 'GitHub', href: 'https://github.com' },
+  { label: 'API Reference', href: '#' },
+  { label: 'Status', href: '#' },
+]
+
+export function Footer() {
+  return (
+    <footer className="mt-auto border-t border-border bg-card/40">
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+          <div className="col-span-2 flex flex-col gap-3 sm:col-span-1">
+            <Logo />
+            <p className="max-w-[22ch] text-sm text-muted-foreground">
+              On-chain wallet intelligence and fund-flow tracing for Ethereum.
+            </p>
+          </div>
+
+          <FooterColumn title="Product">
+            {productLinks.map((l) => (
+              <Link key={l.label} to={l.to} className="hover:text-foreground">
+                {l.label}
+              </Link>
+            ))}
+          </FooterColumn>
+
+          <FooterColumn title="Resources">
+            {resourceLinks.map((l) => (
+              <a key={l.label} href={l.href} target="_blank" rel="noreferrer" className="hover:text-foreground">
+                {l.label}
+              </a>
+            ))}
+          </FooterColumn>
+
+          <FooterColumn title="Network">
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+              Ethereum Mainnet
+            </span>
+            <span>Chain ID 1</span>
+          </FooterColumn>
+        </div>
+
+        <div className="mt-10 flex flex-col gap-3 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Traceon. Not affiliated with the Ethereum Foundation.</p>
+          <p className="max-w-2xl">
+            Entity labels, fund-forwarding, and wallet-cluster flags are heuristics derived from on-chain patterns —
+            not proof of ownership, custody, or wrongdoing. Verify independently before acting on them.
+          </p>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <div className="flex flex-col gap-2 text-sm text-muted-foreground/90">{children}</div>
+    </div>
+  )
+}
