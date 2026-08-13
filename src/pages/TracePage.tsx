@@ -8,11 +8,13 @@ import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, type TraceDirection, type TraceEdge } from '@/lib/api'
+import { api, FLAG_POTENTIAL_FUND_FORWARDING, type TraceDirection, type TraceEdge } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
 
 interface GraphNode {
   id: string
+  isRoot: boolean
+  isFlagged: boolean
 }
 
 interface GraphLink {
@@ -39,10 +41,20 @@ export function TracePage() {
   const graphData = useMemo(() => {
     if (!trace.data) return { nodes: [] as GraphNode[], links: [] as GraphLink[] }
     return {
-      nodes: trace.data.nodes.map((n) => ({ id: n.address })),
+      nodes: trace.data.nodes.map((n) => ({
+        id: n.address,
+        isRoot: n.address === address,
+        isFlagged: n.flags?.includes(FLAG_POTENTIAL_FUND_FORWARDING) ?? false,
+      })),
       links: trace.data.edges.map((e) => ({ source: e.from, target: e.to, edge: e })),
     }
-  }, [trace.data])
+  }, [trace.data, address])
+
+  function nodeColor(n: GraphNode): string {
+    if (n.isRoot) return '#38bdf8'
+    if (n.isFlagged) return '#f59e0b'
+    return '#64748b'
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -98,8 +110,10 @@ export function TracePage() {
               height={600}
               graphData={graphData}
               nodeId="id"
-              nodeLabel={(n: GraphNode) => n.id}
-              nodeAutoColorBy={(n: GraphNode) => (n.id === address ? 'root' : 'other')}
+              nodeLabel={(n: GraphNode) =>
+                n.isFlagged ? `${n.id}\n⚠ potential fund forwarding (heuristic)` : n.id
+              }
+              nodeColor={nodeColor}
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={1}
               linkLabel={(l: GraphLink) => `${l.edge.amount} (${shortenAddress(l.edge.token_address)})`}
@@ -109,6 +123,16 @@ export function TracePage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ backgroundColor: '#38bdf8' }} /> Root wallet
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} /> Potential fund forwarding
+          (heuristic — not proof of common ownership)
+        </span>
+      </div>
 
       <Sheet open={selectedEdge !== null} onOpenChange={(open) => !open && setSelectedEdge(null)}>
         <SheetContent>

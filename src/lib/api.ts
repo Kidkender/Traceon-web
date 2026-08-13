@@ -110,8 +110,11 @@ export interface TraceQuery {
   max_edges?: number
 }
 
+export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
+
 export interface TraceNode {
   address: string
+  flags?: string[]
 }
 
 export interface TraceEdge {
