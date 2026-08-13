@@ -111,6 +111,7 @@ export interface TraceQuery {
 }
 
 export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
+export const FLAG_POTENTIAL_WALLET_CLUSTER = 'potential_wallet_cluster'
 
 export interface TraceNode {
   address: string

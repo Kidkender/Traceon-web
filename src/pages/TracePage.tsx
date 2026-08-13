@@ -8,13 +8,20 @@ import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, FLAG_POTENTIAL_FUND_FORWARDING, type TraceDirection, type TraceEdge } from '@/lib/api'
+import {
+  api,
+  FLAG_POTENTIAL_FUND_FORWARDING,
+  FLAG_POTENTIAL_WALLET_CLUSTER,
+  type TraceDirection,
+  type TraceEdge,
+} from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
 
 interface GraphNode {
   id: string
   isRoot: boolean
-  isFlagged: boolean
+  isForwarding: boolean
+  isCluster: boolean
 }
 
 interface GraphLink {
@@ -44,7 +51,8 @@ export function TracePage() {
       nodes: trace.data.nodes.map((n) => ({
         id: n.address,
         isRoot: n.address === address,
-        isFlagged: n.flags?.includes(FLAG_POTENTIAL_FUND_FORWARDING) ?? false,
+        isForwarding: n.flags?.includes(FLAG_POTENTIAL_FUND_FORWARDING) ?? false,
+        isCluster: n.flags?.includes(FLAG_POTENTIAL_WALLET_CLUSTER) ?? false,
       })),
       links: trace.data.edges.map((e) => ({ source: e.from, target: e.to, edge: e })),
     }
@@ -52,8 +60,17 @@ export function TracePage() {
 
   function nodeColor(n: GraphNode): string {
     if (n.isRoot) return '#38bdf8'
-    if (n.isFlagged) return '#f59e0b'
+    if (n.isForwarding && n.isCluster) return '#ec4899'
+    if (n.isCluster) return '#a855f7'
+    if (n.isForwarding) return '#f59e0b'
     return '#64748b'
+  }
+
+  function nodeLabel(n: GraphNode): string {
+    const warnings: string[] = []
+    if (n.isForwarding) warnings.push('⚠ potential fund forwarding (heuristic)')
+    if (n.isCluster) warnings.push('⚠ potential wallet cluster (heuristic)')
+    return warnings.length > 0 ? `${n.id}\n${warnings.join('\n')}` : n.id
   }
 
   return (
@@ -110,9 +127,7 @@ export function TracePage() {
               height={600}
               graphData={graphData}
               nodeId="id"
-              nodeLabel={(n: GraphNode) =>
-                n.isFlagged ? `${n.id}\n⚠ potential fund forwarding (heuristic)` : n.id
-              }
+              nodeLabel={nodeLabel}
               nodeColor={nodeColor}
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={1}
@@ -130,8 +145,11 @@ export function TracePage() {
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} /> Potential fund forwarding
-          (heuristic — not proof of common ownership)
         </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ backgroundColor: '#a855f7' }} /> Potential wallet cluster
+        </span>
+        <span className="text-muted-foreground/70">Heuristics — not proof of common ownership</span>
       </div>
 
       <Sheet open={selectedEdge !== null} onOpenChange={(open) => !open && setSelectedEdge(null)}>
