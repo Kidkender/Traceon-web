@@ -59,7 +59,7 @@ export function TracePage() {
   }, [trace.data, address])
 
   function nodeColor(n: GraphNode): string {
-    if (n.isRoot) return '#38bdf8'
+    if (n.isRoot) return '#34d399'
     if (n.isForwarding && n.isCluster) return '#ec4899'
     if (n.isCluster) return '#a855f7'
     if (n.isForwarding) return '#f59e0b'
@@ -141,7 +141,7 @@ export function TracePage() {
 
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full" style={{ backgroundColor: '#38bdf8' }} /> Root wallet
+          <span className="size-2.5 rounded-full" style={{ backgroundColor: '#34d399' }} /> Root wallet
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} /> Potential fund forwarding
