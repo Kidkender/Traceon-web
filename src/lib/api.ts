@@ -100,6 +100,59 @@ export interface TransactionDetail extends Omit<TransactionSummary, 'value'> {
   token_transfers: TokenTransferSummary[]
 }
 
+export interface StatsOverview {
+  chain_id: number
+  total_transactions: number
+  total_addresses: number
+  total_entities: number
+  latest_block: number
+  latest_block_time?: string
+}
+
+export interface FeedItem {
+  chain_id: number
+  hash: string
+  from_address: string
+  to_address: string
+  token_name: string
+  token_symbol: string
+  token_address?: string
+  amount: string
+  decimals: number
+  usd_value?: number
+  timestamp: string
+}
+
+export interface FeedPage {
+  items: FeedItem[]
+  page: number
+  limit: number
+  has_next: boolean
+}
+
+export type FeedKind = 'native' | 'token' | undefined
+export type FeedSort = 'newest' | 'oldest'
+
+export interface FeedQuery {
+  // undefined = every supported chain — the recent-activity feed filters
+  // independently of the global network switcher, not from it.
+  chainId?: number
+  kind?: FeedKind
+  sort?: FeedSort
+  page?: number
+  limit?: number
+}
+
+export interface CoinPrice {
+  id: string
+  symbol: string
+  name: string
+  image: string
+  current_price: number
+  price_change_percentage_24h: number
+  market_cap: number
+}
+
 export type TraceDirection = 'out' | 'in' | 'all'
 
 export interface TraceQuery {
@@ -173,4 +226,17 @@ export const api = {
 
   trace: (address: string, query: TraceQuery, chainId: number) =>
     request<TraceResult>(`/trace/${address}`, { ...query, chain_id: chainId }),
+
+  getStats: (chainId: number) => request<StatsOverview>('/stats', { chain_id: chainId }),
+
+  listLatestTransactions: (query: FeedQuery) =>
+    request<FeedPage>('/transactions/latest', {
+      chain_id: query.chainId,
+      kind: query.kind,
+      sort: query.sort,
+      page: query.page,
+      limit: query.limit,
+    }),
+
+  getTopCoins: () => request<CoinPrice[]>('/prices/top'),
 }
