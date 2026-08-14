@@ -106,6 +106,7 @@ export interface TraceQuery {
   direction?: TraceDirection
   depth?: number
   min_value?: string
+  asset?: string
   max_nodes?: number
   max_edges?: number
 }
@@ -113,17 +114,36 @@ export interface TraceQuery {
 export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
 export const FLAG_POTENTIAL_WALLET_CLUSTER = 'potential_wallet_cluster'
 
+export interface EntitySummary {
+  id: number
+  name: string
+  type: string
+  description: string
+  confidence: number
+}
+
+export interface LabelSummary {
+  id: number
+  name: string
+}
+
 export interface TraceNode {
   address: string
   flags?: string[]
+  entity?: EntitySummary
+  labels?: LabelSummary[]
 }
 
 export interface TraceEdge {
   from: string
   to: string
   token_address: string
+  token_symbol?: string
+  token_decimals?: number
   amount: string
   transaction_hash: string
+  block_number: number
+  timestamp: string
 }
 
 export interface TraceResult {

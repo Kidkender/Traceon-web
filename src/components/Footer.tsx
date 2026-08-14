@@ -13,7 +13,25 @@ const resourceLinks = [
   { label: 'Status', href: '#' },
 ]
 
-export function Footer() {
+export function Footer({ minimal = false }: { minimal?: boolean }) {
+  // Tool pages (trace/wallet) want vertical space for the data, not a
+  // marketing footer — same legal disclaimer and copyright, just without
+  // the logo/tagline/link columns that only make sense as a landing-page
+  // sitemap.
+  if (minimal) {
+    return (
+      <footer className="mt-auto border-t border-border bg-card/40">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Traceon. Not affiliated with the Ethereum Foundation.</p>
+          <p className="max-w-2xl">
+            Entity labels, fund-forwarding, and wallet-cluster flags are heuristics — not proof of ownership,
+            custody, or wrongdoing.
+          </p>
+        </div>
+      </footer>
+    )
+  }
+
   return (
     <footer className="mt-auto border-t border-border bg-card/40">
       <div className="mx-auto max-w-6xl px-6 py-10">

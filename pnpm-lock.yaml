@@ -17,6 +17,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.8)
+      '@web3icons/core':
+        specifier: ^4.0.54
+        version: 4.0.54
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -666,6 +669,12 @@ packages:
         optional: true
       babel-plugin-react-compiler:
         optional: true
+
+  '@web3icons/common@0.11.49':
+    resolution: {integrity: sha512-hQOvBWe8GIrUTSvwhBejEC9/Nlt5KWt2oVDgviM5NZxLs3H7ubwrmYQadZuHsD0d+RUcb2LOX/FNJrwci4hMCw==}
+
+  '@web3icons/core@4.0.54':
+    resolution: {integrity: sha512-n/nPe1gSLhtJkH+mg70w9bwoZbBF81gKktUrSQ9i59j4+usTyp3oxtnS8h7z4HME+wC3oiYLwpKobG3vb+Nk1A==}
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -2700,6 +2709,12 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.2.1(@types/node@24.13.3)(jiti@2.7.0)
+
+  '@web3icons/common@0.11.49': {}
+
+  '@web3icons/core@4.0.54':
+    dependencies:
+      '@web3icons/common': 0.11.49
 
   accepts@2.0.0:
     dependencies:

@@ -117,7 +117,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-x-hidden;
     background-image:
       linear-gradient(oklch(0.94 0.02 210 / 5%) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.94 0.02 210 / 5%) 1px, transparent 1px);
@@ -125,6 +125,6 @@
     background-position: center;
   }
   html {
-    @apply font-sans;
+    @apply font-sans overflow-x-hidden;
   }
 }
