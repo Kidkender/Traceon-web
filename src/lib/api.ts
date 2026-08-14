@@ -153,17 +153,24 @@ export interface TraceResult {
   truncated: boolean
 }
 
+// Every call below takes the caller's currently-selected chain_id (see
+// useNetwork()/NetworkProvider) so wallet/transaction/trace data always
+// scopes to the network the user picked, instead of implicitly assuming
+// Ethereum. The backend defaults chain_id to 1 when omitted, but call
+// sites should always pass it explicitly now that multiple chains exist.
 export const api = {
-  getWalletOverview: (address: string) => request<WalletOverview>(`/wallets/${address}`),
+  getWalletOverview: (address: string, chainId: number) =>
+    request<WalletOverview>(`/wallets/${address}`, { chain_id: chainId }),
 
-  listWalletTransactions: (address: string, page: number, limit: number) =>
-    requestPaginated<TransactionSummary>(`/wallets/${address}/transactions`, { page, limit }),
+  listWalletTransactions: (address: string, page: number, limit: number, chainId: number) =>
+    requestPaginated<TransactionSummary>(`/wallets/${address}/transactions`, { page, limit, chain_id: chainId }),
 
-  listWalletTransfers: (address: string, page: number, limit: number) =>
-    requestPaginated<TokenTransferSummary>(`/wallets/${address}/transfers`, { page, limit }),
+  listWalletTransfers: (address: string, page: number, limit: number, chainId: number) =>
+    requestPaginated<TokenTransferSummary>(`/wallets/${address}/transfers`, { page, limit, chain_id: chainId }),
 
-  getTransaction: (hash: string) => request<TransactionDetail>(`/transactions/${hash}`),
+  getTransaction: (hash: string, chainId: number) =>
+    request<TransactionDetail>(`/transactions/${hash}`, { chain_id: chainId }),
 
-  trace: (address: string, query: TraceQuery) =>
-    request<TraceResult>(`/trace/${address}`, { ...query }),
+  trace: (address: string, query: TraceQuery, chainId: number) =>
+    request<TraceResult>(`/trace/${address}`, { ...query, chain_id: chainId }),
 }

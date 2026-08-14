@@ -22,6 +22,7 @@ import {
   type TraceEdge,
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
+import { useNetwork } from '@/lib/NetworkContext'
 import { formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
 import { tokenIconSvg } from '@/lib/token-icon'
@@ -113,6 +114,7 @@ export function TracePage() {
   const [addressQuery, setAddressQuery] = useState(address)
   const [addressError, setAddressError] = useState<string | null>(null)
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
+  const { chainId } = useNetwork()
 
   function handleAddressSearch(e: FormEvent) {
     e.preventDefault()
@@ -126,13 +128,13 @@ export function TracePage() {
   }
 
   const trace = useQuery({
-    queryKey: ['trace', address, direction, depth, minValue, asset],
-    queryFn: () => api.trace(address, { direction, depth, min_value: minValue, asset: asset || undefined }),
+    queryKey: ['trace', chainId, address, direction, depth, minValue, asset],
+    queryFn: () => api.trace(address, { direction, depth, min_value: minValue, asset: asset || undefined }, chainId),
   })
 
   const selectedTx = useQuery({
-    queryKey: ['transaction', selectedEdge?.transaction_hash],
-    queryFn: () => api.getTransaction(selectedEdge!.transaction_hash),
+    queryKey: ['transaction', chainId, selectedEdge?.transaction_hash],
+    queryFn: () => api.getTransaction(selectedEdge!.transaction_hash, chainId),
     enabled: selectedEdge !== null,
   })
 

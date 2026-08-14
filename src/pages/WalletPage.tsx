@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
+import { useNetwork } from '@/lib/NetworkContext'
 
 const PAGE_LIMIT = 20
 
@@ -15,23 +16,24 @@ export function WalletPage() {
   const { address } = useParams<{ address: string }>()
   if (!address) return null
 
+  const { chainId } = useNetwork()
   const [tab, setTab] = useState<'transactions' | 'transfers'>('transactions')
   const [page, setPage] = useState(1)
 
   const overview = useQuery({
-    queryKey: ['wallet', address],
-    queryFn: () => api.getWalletOverview(address),
+    queryKey: ['wallet', chainId, address],
+    queryFn: () => api.getWalletOverview(address, chainId),
   })
 
   const transactions = useQuery({
-    queryKey: ['wallet', address, 'transactions', page],
-    queryFn: () => api.listWalletTransactions(address, page, PAGE_LIMIT),
+    queryKey: ['wallet', chainId, address, 'transactions', page],
+    queryFn: () => api.listWalletTransactions(address, page, PAGE_LIMIT, chainId),
     enabled: tab === 'transactions',
   })
 
   const transfers = useQuery({
-    queryKey: ['wallet', address, 'transfers', page],
-    queryFn: () => api.listWalletTransfers(address, page, PAGE_LIMIT),
+    queryKey: ['wallet', chainId, address, 'transfers', page],
+    queryFn: () => api.listWalletTransfers(address, page, PAGE_LIMIT, chainId),
     enabled: tab === 'transfers',
   })
 
