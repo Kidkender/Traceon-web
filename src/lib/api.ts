@@ -131,6 +131,8 @@ export interface FeedItem {
   hash: string
   from_address: string
   to_address: string
+  from_entity_name?: string
+  to_entity_name?: string
   token_name: string
   token_symbol: string
   token_address?: string
@@ -148,14 +150,16 @@ export interface FeedPage {
 }
 
 export type FeedKind = 'native' | 'token' | undefined
-export type FeedSort = 'newest' | 'oldest'
+export type FeedSortBy = 'timestamp' | 'from_address' | 'to_address' | 'amount'
+export type FeedSortDir = 'asc' | 'desc'
 
 export interface FeedQuery {
-  // undefined = every supported chain — the recent-activity feed filters
-  // independently of the global network switcher, not from it.
+  // undefined = every supported chain — the recent-activity feed has its
+  // own independent chain filter, not tied to any other page's chain state.
   chainId?: number
   kind?: FeedKind
-  sort?: FeedSort
+  sortBy?: FeedSortBy
+  sortDir?: FeedSortDir
   page?: number
   limit?: number
 }
@@ -179,6 +183,21 @@ export interface TraceQuery {
   asset?: string
   max_nodes?: number
   max_edges?: number
+}
+
+// SearchEntityInfo mirrors the backend's leaner dto.SearchEntityInfo, not
+// the full EntitySummary below — a search hit only carries enough to render
+// a suggestion row (name + type), not description/confidence/every address.
+export interface SearchEntityInfo {
+  id: number
+  name: string
+  type: string
+}
+
+export interface SearchResultItem {
+  address: string
+  entity?: SearchEntityInfo
+  chains?: number[]
 }
 
 export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
@@ -223,10 +242,12 @@ export interface TraceResult {
   truncated: boolean
 }
 
-// Every call below takes the caller's currently-selected chain_id (see
-// useNetwork()/NetworkProvider) so wallet/transaction/trace data always
-// scopes to the network the user picked, instead of implicitly assuming
-// Ethereum. The backend defaults chain_id to 1 when omitted, but call
+// Every call below takes the caller's currently-selected chain_id, sourced
+// from whichever page owns that choice now (chain is per-page state, not a
+// global header switcher — see WalletPage/TracePage's local chainId) so
+// wallet/transaction/trace data always scopes to the network the user
+// picked, instead of implicitly assuming Ethereum. The backend defaults
+// chain_id to 1 when omitted, but call
 // sites should always pass it explicitly now that multiple chains exist.
 export const api = {
   getWalletOverview: (address: string, chainId: number) =>
@@ -256,10 +277,15 @@ export const api = {
     request<FeedPage>('/transactions/latest', {
       chain_id: query.chainId,
       kind: query.kind,
-      sort: query.sort,
+      sort_by: query.sortBy,
+      sort_dir: query.sortDir,
       page: query.page,
       limit: query.limit,
     }),
 
   getTopCoins: () => request<CoinPrice[]>('/prices/top'),
+
+  // Chain-agnostic by design — no chain_id param. See discuss.txt: search
+  // resolves *which address*, chain selection happens on the address page.
+  search: (query: string) => request<SearchResultItem[]>('/search', { q: query }),
 }

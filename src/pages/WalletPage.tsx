@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, type TokenHolding } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
-import { useNetwork } from '@/lib/NetworkContext'
-import { getNetwork, type ChainId } from '@/lib/network'
+import { DEFAULT_CHAIN_ID, getNetwork, NETWORKS, type ChainId } from '@/lib/network'
 import { formatAssetQuantity, formatDisplayAmount, formatTokenAmount, sumCrossChainAmount } from '@/lib/token'
 import { formatUsd } from '@/lib/currency'
+import { cn } from '@/lib/utils'
 import { TokenIcon } from '@/components/TokenIcon'
 
 const TOP_ASSET_COUNT = 5
@@ -89,7 +89,12 @@ export function WalletPage() {
   // (react-hooks/rules-of-hooks) rather than gating on an early return,
   // guarding the actual queries with `enabled: !!address` instead.
   const { address } = useParams<{ address: string }>()
-  const { chainId } = useNetwork()
+  // No more global header switcher — chain is local to this page. Starts on
+  // DEFAULT_CHAIN_ID and gets overridden once (see effect below) to whichever
+  // chain holdings shows the most value on, unless the user has already
+  // picked a chain themselves.
+  const [chainId, setChainId] = useState<ChainId>(DEFAULT_CHAIN_ID)
+  const [userPickedChain, setUserPickedChain] = useState(false)
   const network = getNetwork(chainId)
   const [tab, setTab] = useState<'transactions' | 'transfers' | 'holdings'>('transactions')
   const [page, setPage] = useState(1)
@@ -134,6 +139,16 @@ export function WalletPage() {
     [holdings.data]
   )
 
+  // groupByChain sorts by totalUsd desc, so [0] is the "primary chain" —
+  // mirrors discuss.txt's scoring idea (most value/activity wins the
+  // default tab) without needing a separate backend field for it yet.
+  // Only runs until the user picks a chain themselves; after that their
+  // choice sticks even if holdings later reload.
+  useEffect(() => {
+    if (userPickedChain || chainGroups.length === 0) return
+    setChainId(chainGroups[0].chainId as ChainId)
+  }, [chainGroups, userPickedChain])
+
   if (!address) return null
 
   return (
@@ -156,7 +171,34 @@ export function WalletPage() {
               <p className="mt-0.5 text-xs text-muted-foreground">{overview.data.contract_name}</p>
             )}
           </div>
-          <Button size="sm" render={<Link to={`/trace/${address}`}>View Trace</Link>} />
+          <div className="flex items-center gap-2">
+            {/* Chain tabs — indexed data (overview/transactions/transfers) is
+                per-chain, unlike holdings above which is already multichain.
+                Switching here re-scopes those three queries; it never gates
+                whether the address itself was found. */}
+            <div className="flex items-center gap-1 rounded-full border border-border p-0.5">
+              {NETWORKS.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => {
+                    setUserPickedChain(true)
+                    setChainId(n.id)
+                    setPage(1)
+                  }}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                    chainId === n.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {n.shortName}
+                </button>
+              ))}
+            </div>
+            <Button size="sm" render={<Link to={`/trace/${address}`}>View Trace</Link>} />
+          </div>
         </CardHeader>
         <CardContent>
           {overview.isLoading && <Skeleton className="h-16 w-full" />}

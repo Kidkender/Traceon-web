@@ -1,10 +1,21 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, Blocks, Check, ChevronLeft, ChevronRight, Copy, Wallet } from 'lucide-react'
-import { useNetwork } from '@/lib/NetworkContext'
-import { getNetwork, NETWORKS, type ChainId } from '@/lib/network'
-import { api, type FeedKind, type FeedSort } from '@/lib/api'
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Blocks,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Wallet,
+} from 'lucide-react'
+import { DEFAULT_CHAIN_ID, getNetwork, NETWORKS, type ChainId } from '@/lib/network'
+import { api, type FeedKind, type FeedSortBy, type FeedSortDir } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
 import { formatTokenAmount } from '@/lib/token'
 import { cn } from '@/lib/utils'
@@ -35,7 +46,11 @@ const exampleWallets = [
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { chainId } = useNetwork()
+  // Local to the hero/stats section only — not the header's old global
+  // switcher. The feed section below has always had its own independent
+  // chain filter (feedChain); this mirrors that pattern instead of pinning
+  // the whole page to one implicit "current chain".
+  const [chainId, setChainId] = useState<ChainId>(DEFAULT_CHAIN_ID)
   const network = getNetwork(chainId)
 
   const stats = useQuery({
@@ -53,16 +68,18 @@ export function HomePage() {
   // chain the wallet search box happens to be scoped to.
   const [feedChain, setFeedChain] = useState<ChainFilter>(CHAIN_FILTER_ALL)
   const [feedKind, setFeedKind] = useState<KindFilter>(KIND_FILTER_ALL)
-  const [feedSort, setFeedSort] = useState<FeedSort>('newest')
+  const [feedSortBy, setFeedSortBy] = useState<FeedSortBy>('timestamp')
+  const [feedSortDir, setFeedSortDir] = useState<FeedSortDir>('desc')
   const [feedPage, setFeedPage] = useState(1)
 
   const feed = useQuery({
-    queryKey: ['feed', feedChain, feedKind, feedSort, feedPage],
+    queryKey: ['feed', feedChain, feedKind, feedSortBy, feedSortDir, feedPage],
     queryFn: () =>
       api.listLatestTransactions({
         chainId: feedChain === CHAIN_FILTER_ALL ? undefined : feedChain,
         kind: feedKind === KIND_FILTER_ALL ? undefined : feedKind,
-        sort: feedSort,
+        sortBy: feedSortBy,
+        sortDir: feedSortDir,
         page: feedPage,
         limit: FEED_LIMIT,
       }),
@@ -76,6 +93,21 @@ export function HomePage() {
   function updateFeedFilter(update: () => void) {
     update()
     setFeedPage(1)
+  }
+
+  // Clicking a sortable header: same column toggles direction, a
+  // different column switches to it starting from a sensible default
+  // direction (newest-first for time, alphabetical for addresses, largest
+  // first for value — whichever direction is most useful on first click).
+  function toggleSort(column: FeedSortBy) {
+    updateFeedFilter(() => {
+      if (feedSortBy === column) {
+        setFeedSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setFeedSortBy(column)
+        setFeedSortDir(column === 'amount' || column === 'timestamp' ? 'desc' : 'asc')
+      }
+    })
   }
 
   const topCoins = useQuery({
@@ -111,9 +143,19 @@ export function HomePage() {
       <section className="relative flex flex-col items-center gap-8 overflow-hidden text-center">
         <NodeField />
 
-        <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs tracking-wide text-primary">
-          {network.name.toUpperCase()} · LIVE
-        </span>
+        <Select value={String(chainId)} onValueChange={(v) => setChainId(Number(v) as ChainId)}>
+          <SelectTrigger className="h-7 w-auto gap-1.5 rounded-full border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs tracking-wide text-primary">
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            <SelectValue>{(value: string) => `${getNetwork(Number(value) as ChainId).name.toUpperCase()} · LIVE`}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {NETWORKS.map((n) => (
+              <SelectItem key={n.id} value={String(n.id)}>
+                {n.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
           Trace the flow of funds across{' '}
@@ -237,18 +279,6 @@ export function HomePage() {
               </SelectContent>
             </Select>
 
-            <Select
-              value={feedSort}
-              onValueChange={(v) => updateFeedFilter(() => setFeedSort(v as FeedSort))}
-            >
-              <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full border-border px-2.5 py-1 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest first</SelectItem>
-                <SelectItem value="oldest">Oldest first</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
 
@@ -258,10 +288,16 @@ export function HomePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Network</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
+                  <SortableHead column="from_address" active={feedSortBy} dir={feedSortDir} onSort={toggleSort}>
+                    From
+                  </SortableHead>
+                  <SortableHead column="to_address" active={feedSortBy} dir={feedSortDir} onSort={toggleSort}>
+                    To
+                  </SortableHead>
                   <TableHead>Token</TableHead>
-                  <TableHead>Value</TableHead>
+                  <SortableHead column="amount" active={feedSortBy} dir={feedSortDir} onSort={toggleSort}>
+                    Value
+                  </SortableHead>
                   <TableHead>USD</TableHead>
                 </TableRow>
               </TableHeader>
@@ -285,10 +321,10 @@ export function HomePage() {
                         </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        <AddressCell address={tx.from_address} />
+                        <AddressCell address={tx.from_address} entityName={tx.from_entity_name} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        <AddressCell address={tx.to_address} />
+                        <AddressCell address={tx.to_address} entityName={tx.to_entity_name} />
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1.5 text-xs">
@@ -346,17 +382,53 @@ export function HomePage() {
   )
 }
 
+// Clickable table header for a sortable feed column — shows a neutral
+// up/down icon when this isn't the active sort column, and the actual
+// direction (filled arrow) when it is, so the current sort is visible at
+// a glance instead of needing to check the external filter row.
+function SortableHead({
+  column,
+  active,
+  dir,
+  onSort,
+  children,
+}: {
+  column: FeedSortBy
+  active: FeedSortBy
+  dir: FeedSortDir
+  onSort: (column: FeedSortBy) => void
+  children: React.ReactNode
+}) {
+  const isActive = active === column
+  const Icon = isActive ? (dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return (
+    <TableHead>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={cn(
+          'flex items-center gap-1 transition-colors hover:text-foreground',
+          isActive ? 'text-foreground' : 'text-muted-foreground'
+        )}
+      >
+        {children}
+        <Icon className="size-3" />
+      </button>
+    </TableHead>
+  )
+}
+
 // Shortened address linking to the wallet page, with a copy button that
 // only appears on hover — keeps the table dense while still making the
 // full address one click away to copy, without a permanently-visible icon
 // competing with the rest of the row.
-function AddressCell({ address }: { address: string }) {
+function AddressCell({ address, entityName }: { address: string; entityName?: string }) {
   const { copied, copy } = useCopyToClipboard()
 
   return (
     <span className="group/addr inline-flex items-center gap-1">
-      <Link to={`/address/${address}`} className="transition-colors hover:text-primary">
-        {shortenAddress(address)}
+      <Link to={`/address/${address}`} className="transition-colors hover:text-primary" title={entityName ? address : undefined}>
+        {entityName ?? shortenAddress(address)}
       </Link>
       <button
         type="button"

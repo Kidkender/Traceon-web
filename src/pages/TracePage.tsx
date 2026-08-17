@@ -22,7 +22,7 @@ import {
   type TraceEdge,
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
-import { useNetwork } from '@/lib/NetworkContext'
+import { DEFAULT_CHAIN_ID, NETWORKS, type ChainId } from '@/lib/network'
 import { ASSUMED_DECIMALS_FALLBACK, formatDisplayAmount, formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
@@ -104,7 +104,11 @@ export function TracePage() {
   const [addressQuery, setAddressQuery] = useState(address ?? '')
   const [addressError, setAddressError] = useState<string | null>(null)
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
-  const { chainId } = useNetwork()
+  // Trace is inherently chain-specific (a single fund-flow graph on one
+  // network), so unlike Address/Search this stays local state with no
+  // multichain aggregation — just no longer sourced from a global header
+  // switcher. Lives in the Filters popover next to Direction/Depth/Min value.
+  const [chainId, setChainId] = useState<ChainId>(DEFAULT_CHAIN_ID)
 
   function handleAddressSearch(e: FormEvent) {
     e.preventDefault()
@@ -338,6 +342,22 @@ export function TracePage() {
                 Filters
               </PopoverTrigger>
               <PopoverContent className="flex w-64 flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Chain</span>
+                  <Select value={String(chainId)} onValueChange={(v) => setChainId(Number(v) as ChainId)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NETWORKS.map((n) => (
+                        <SelectItem key={n.id} value={String(n.id)}>
+                          {n.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Direction</span>
                   <Select value={direction} onValueChange={(v) => setDirection(v as TraceDirection)}>
