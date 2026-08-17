@@ -355,7 +355,7 @@ function AddressCell({ address }: { address: string }) {
 
   return (
     <span className="group/addr inline-flex items-center gap-1">
-      <Link to={`/wallets/${address}`} className="transition-colors hover:text-primary">
+      <Link to={`/address/${address}`} className="transition-colors hover:text-primary">
         {shortenAddress(address)}
       </Link>
       <button

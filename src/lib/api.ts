@@ -72,6 +72,8 @@ export interface WalletOverview {
   first_seen_block: number
   last_seen_block: number
   contract_name?: string
+  entity?: EntitySummary
+  latest_transaction_at?: string
 }
 
 export interface TransactionSummary {

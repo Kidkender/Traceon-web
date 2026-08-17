@@ -37,3 +37,29 @@ export function formatDisplayAmount(item: DisplayAmount): string {
   const prefix = item.token_decimals === undefined ? '~' : ''
   return item.token_symbol ? `${prefix}${formatted} ${item.token_symbol}` : `${prefix}${formatted}`
 }
+
+// Sums the same asset's balance across chains despite each chain
+// potentially reporting a different `decimals()` (e.g. a BSC-bridged
+// stablecoin at 18 decimals vs. its 6-decimal Ethereum original) — every
+// balance is rescaled to a common 18-decimal base in BigInt before adding,
+// so cross-chain totals never drift the way naively summing raw balance
+// strings would. Precision beyond what Number can hold is not preserved;
+// this is a display total, not something downstream math depends on.
+export function sumCrossChainAmount(items: { balance: string; decimals: number }[]): number {
+  const scale = 18
+  let total = 0n
+  for (const { balance, decimals } of items) {
+    const value = BigInt(balance)
+    const diff = scale - decimals
+    total += diff >= 0 ? value * 10n ** BigInt(diff) : value / 10n ** BigInt(-diff)
+  }
+  return Number(total) / 10 ** scale
+}
+
+// Formats a summed cross-chain quantity for compact display — fewer
+// fraction digits for larger amounts (nobody needs 1234.56789012 ETH
+// spelled out), more for small ones so a sub-$1 holding doesn't round to 0.
+export function formatAssetQuantity(amount: number): string {
+  const maximumFractionDigits = amount >= 1000 ? 2 : amount >= 1 ? 4 : 6
+  return amount.toLocaleString('en-US', { maximumFractionDigits })
+}

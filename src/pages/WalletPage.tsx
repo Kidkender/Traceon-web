@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -6,19 +6,85 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api } from '@/lib/api'
+import { api, type TokenHolding } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
 import { useNetwork } from '@/lib/NetworkContext'
 import { getNetwork, type ChainId } from '@/lib/network'
-import { formatDisplayAmount, formatTokenAmount } from '@/lib/token'
+import { formatAssetQuantity, formatDisplayAmount, formatTokenAmount, sumCrossChainAmount } from '@/lib/token'
 import { formatUsd } from '@/lib/currency'
 import { TokenIcon } from '@/components/TokenIcon'
+
+const TOP_ASSET_COUNT = 5
+
+interface AssetGroup {
+  symbol: string
+  name: string
+  totalUsd: number
+  totalQuantity: number // summed across chains, normalized for decimals
+  chains: TokenHolding[] // sorted by usd_value desc
+}
+
+interface ChainGroup {
+  chainId: number
+  totalUsd: number
+  holdings: TokenHolding[] // sorted by usd_value desc
+}
+
+function usdOf(h: TokenHolding): number {
+  return h.usd_value ?? 0
+}
+
+// Groups by symbol (an asset held across multiple chains — e.g. native ETH
+// plus Binance-Peg ETH — is one economic position, not several unrelated
+// rows) and ranks by combined USD value across chains.
+function groupByAsset(holdings: TokenHolding[]): AssetGroup[] {
+  const bySymbol = new Map<string, TokenHolding[]>()
+  for (const h of holdings) {
+    const key = h.token_symbol.toUpperCase()
+    const list = bySymbol.get(key)
+    if (list) list.push(h)
+    else bySymbol.set(key, [h])
+  }
+  const groups: AssetGroup[] = []
+  for (const [symbol, chains] of bySymbol) {
+    chains.sort((a, b) => usdOf(b) - usdOf(a))
+    groups.push({
+      symbol,
+      name: chains[0].token_name,
+      totalUsd: chains.reduce((sum, h) => sum + usdOf(h), 0),
+      totalQuantity: sumCrossChainAmount(chains),
+      chains,
+    })
+  }
+  groups.sort((a, b) => b.totalUsd - a.totalUsd)
+  return groups
+}
+
+function groupByChain(holdings: TokenHolding[]): ChainGroup[] {
+  const byChain = new Map<number, TokenHolding[]>()
+  for (const h of holdings) {
+    const list = byChain.get(h.chain_id)
+    if (list) list.push(h)
+    else byChain.set(h.chain_id, [h])
+  }
+  const groups: ChainGroup[] = []
+  for (const [chainId, chainHoldings] of byChain) {
+    chainHoldings.sort((a, b) => usdOf(b) - usdOf(a))
+    groups.push({
+      chainId,
+      totalUsd: chainHoldings.reduce((sum, h) => sum + usdOf(h), 0),
+      holdings: chainHoldings,
+    })
+  }
+  groups.sort((a, b) => b.totalUsd - a.totalUsd)
+  return groups
+}
 
 const PAGE_LIMIT = 20
 
 export function WalletPage() {
-  // address is always present in practice (the route is /wallets/:address,
-  // there's no bare /wallets route), but useParams types it as possibly
+  // address is always present in practice (the route is /address/:address,
+  // there's no bare /address route), but useParams types it as possibly
   // undefined — every hook below runs unconditionally regardless
   // (react-hooks/rules-of-hooks) rather than gating on an early return,
   // guarding the actual queries with `enabled: !!address` instead.
@@ -51,11 +117,22 @@ export function WalletPage() {
   // network switcher is on. No auto-refresh either: each load is a fresh
   // RPC balance check, and this is a "check now" view a user opens
   // on-demand, not a live ticker worth polling and burning RPC quota on.
+  //
+  // Fetched as soon as the address is known (not gated on tab === 'holdings')
+  // because the overview card's multi-chain total value stat needs it on
+  // first paint, before the user ever clicks into the Holdings tab.
   const holdings = useQuery({
     queryKey: ['wallet', address, 'holdings'],
     queryFn: () => api.getWalletHoldings(address!),
-    enabled: !!address && tab === 'holdings',
+    enabled: !!address,
   })
+
+  const topAssets = useMemo(() => (holdings.data ? groupByAsset(holdings.data).slice(0, TOP_ASSET_COUNT) : []), [holdings.data])
+  const chainGroups = useMemo(() => (holdings.data ? groupByChain(holdings.data) : []), [holdings.data])
+  const totalValueUsd = useMemo(
+    () => (holdings.data ? holdings.data.reduce((sum, h) => sum + (h.usd_value ?? 0), 0) : undefined),
+    [holdings.data]
+  )
 
   if (!address) return null
 
@@ -64,7 +141,17 @@ export function WalletPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="font-mono text-base">{address}</CardTitle>
+            {overview.data?.entity ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-xl">{overview.data.entity.name}</CardTitle>
+                  <Badge variant="secondary">{overview.data.entity.type}</Badge>
+                </div>
+                <p className="mt-0.5 font-mono text-xs text-muted-foreground">{address}</p>
+              </>
+            ) : (
+              <CardTitle className="font-mono text-base">{address}</CardTitle>
+            )}
             {overview.data?.contract_name && (
               <p className="mt-0.5 text-xs text-muted-foreground">{overview.data.contract_name}</p>
             )}
@@ -79,6 +166,21 @@ export function WalletPage() {
               <Stat label="Transactions" value={overview.data.transaction_count.toLocaleString()} />
               <Stat label="First seen block" value={overview.data.first_seen_block.toLocaleString()} />
               <Stat label="Last seen block" value={overview.data.last_seen_block.toLocaleString()} />
+              <Stat
+                label="Multi-chain total value"
+                value={totalValueUsd !== undefined ? formatUsd(totalValueUsd) : holdings.isError ? '—' : 'Loading…'}
+              />
+              <Stat
+                label="Latest transaction"
+                value={
+                  overview.data.latest_transaction_at
+                    ? new Date(overview.data.latest_transaction_at).toLocaleString(undefined, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    : 'No transactions'
+                }
+              />
             </div>
           )}
           {overview.isError && <p className="text-sm text-destructive">Wallet not found.</p>}
@@ -178,59 +280,110 @@ export function WalletPage() {
       )}
 
       {tab === 'holdings' && (
-        <Card>
-          <CardContent>
-            {holdings.isLoading && <Skeleton className="h-32 w-full" />}
-            {holdings.isError && <p className="text-sm text-destructive">Failed to load holdings.</p>}
-            {holdings.data && (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Network</TableHead>
-                    <TableHead>Token</TableHead>
-                    <TableHead>Balance</TableHead>
-                    <TableHead>USD</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {holdings.data.map((h, i) => {
-                    const holdingNetwork = getNetwork(h.chain_id as ChainId)
-                    return (
-                      <TableRow key={`${h.chain_id}-${h.token_address ?? 'native'}-${i}`}>
-                        <TableCell>
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <TokenIcon symbol={holdingNetwork.nativeSymbol} size={16} />
-                            {holdingNetwork.shortName}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="flex items-center gap-1.5 text-xs">
-                            <TokenIcon symbol={h.token_symbol} size={18} />
-                            <span className="flex flex-col leading-tight">
-                              <span className="font-medium text-foreground">{h.token_name}</span>
-                              <span className="text-[10px] text-muted-foreground uppercase">{h.token_symbol}</span>
+        <div className="flex flex-col gap-6">
+          {holdings.isLoading && <Skeleton className="h-32 w-full" />}
+          {holdings.isError && <p className="text-sm text-destructive">Failed to load holdings.</p>}
+
+          {holdings.data && holdings.data.length === 0 && (
+            <Card>
+              <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                No holdings found on any configured chain.
+              </CardContent>
+            </Card>
+          )}
+
+          {holdings.data && holdings.data.length > 0 && (
+            <>
+              {topAssets.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Top Assets</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                      {topAssets.map((asset) => (
+                        <div
+                          key={asset.symbol}
+                          className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center"
+                        >
+                          <TokenIcon symbol={asset.symbol} size={32} />
+                          <div className="flex flex-col leading-tight">
+                            <span className="text-sm font-medium text-foreground">{asset.name}</span>
+                            <span className="text-[10px] uppercase text-muted-foreground">{asset.symbol}</span>
+                          </div>
+                          <div className="flex flex-col items-center leading-tight">
+                            <span className="font-mono text-sm font-semibold text-foreground">{formatUsd(asset.totalUsd)}</span>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              {formatAssetQuantity(asset.totalQuantity)} {asset.symbol}
                             </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{formatTokenAmount(h.balance, h.decimals)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {h.usd_value !== undefined ? formatUsd(h.usd_value) : '—'}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                  {holdings.data.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
-                        No holdings found on any configured chain.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            {asset.chains.map((h) => (
+                              <span
+                                key={h.chain_id}
+                                className="flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                              >
+                                <TokenIcon symbol={getNetwork(h.chain_id as ChainId).nativeSymbol} size={10} />
+                                {getNetwork(h.chain_id as ChainId).shortName}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {chainGroups.map((group) => {
+                  const net = getNetwork(group.chainId as ChainId)
+                  return (
+                    <Card key={group.chainId}>
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                          <TokenIcon symbol={net.nativeSymbol} size={18} />
+                          {net.shortName}
+                        </CardTitle>
+                        <span className="font-mono text-sm font-medium text-foreground">{formatUsd(group.totalUsd)}</span>
+                      </CardHeader>
+                      <CardContent>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Token</TableHead>
+                              <TableHead>Balance</TableHead>
+                              <TableHead>USD</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.holdings.map((h, i) => (
+                              <TableRow key={`${h.token_address ?? 'native'}-${i}`}>
+                                <TableCell>
+                                  <span className="flex items-center gap-1.5 text-xs">
+                                    <TokenIcon symbol={h.token_symbol} size={18} />
+                                    <span className="flex flex-col leading-tight">
+                                      <span className="font-medium text-foreground">{h.token_name}</span>
+                                      <span className="text-[10px] text-muted-foreground uppercase">{h.token_symbol}</span>
+                                    </span>
+                                  </span>
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">{formatTokenAmount(h.balance, h.decimals)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {h.usd_value !== undefined ? formatUsd(h.usd_value) : '—'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   )

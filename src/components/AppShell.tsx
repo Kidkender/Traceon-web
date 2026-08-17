@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return
     }
     setError(null)
-    navigate(`/wallets/${address}`)
+    navigate(`/address/${address}`)
   }
 
   return (
