@@ -23,6 +23,7 @@ import {
   type TraceEdge,
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
+import { attributionLevel, formatSource } from '@/lib/entity'
 import { DEFAULT_CHAIN_ID, NETWORKS, type ChainId } from '@/lib/network'
 import { ASSUMED_DECIMALS_FALLBACK, formatDisplayAmount, formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
@@ -284,7 +285,11 @@ export function TracePage() {
 
   function nodeLabel(n: GraphNode): string {
     const lines: string[] = [n.id]
-    if (n.entity) lines.push(`🏷 ${n.entity.name} (${n.entity.type})`)
+    if (n.entity) {
+      const level = attributionLevel(n.entity.source_confidence)
+      const levelLabel = level === 'confirmed' ? 'Confirmed' : level === 'likely' ? 'Likely' : 'Unknown'
+      lines.push(`🏷 ${n.entity.name} (${n.entity.type}) — ${levelLabel}, ${formatSource(n.entity.source)}`)
+    }
     if (n.labels?.length) lines.push(n.labels.map((l) => l.name).join(', '))
     if (n.isForwarding) lines.push('⚠ potential fund forwarding (heuristic)')
     if (n.isCluster) lines.push('⚠ potential wallet cluster (heuristic)')

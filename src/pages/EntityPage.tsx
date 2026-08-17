@@ -8,6 +8,7 @@ import { api } from '@/lib/api'
 import { getNetwork, type ChainId } from '@/lib/network'
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
 import { TokenIcon } from '@/components/TokenIcon'
+import { AttributionBadge } from '@/components/AttributionBadge'
 import { Copy, Check } from 'lucide-react'
 
 // The resource discuss.txt calls out as still missing: an entity is a
@@ -65,7 +66,13 @@ export function EntityPage() {
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 {entity.data.addresses!.map((a) => (
-                  <AddressRow key={`${a.chain_id}-${a.address}`} address={a.address} chainId={a.chain_id} />
+                  <AddressRow
+                    key={`${a.chain_id}-${a.address}`}
+                    address={a.address}
+                    chainId={a.chain_id}
+                    source={a.source}
+                    confidence={a.confidence}
+                  />
                 ))}
               </div>
             )}
@@ -76,7 +83,17 @@ export function EntityPage() {
   )
 }
 
-function AddressRow({ address, chainId }: { address: string; chainId: number }) {
+function AddressRow({
+  address,
+  chainId,
+  source,
+  confidence,
+}: {
+  address: string
+  chainId: number
+  source: string
+  confidence: number
+}) {
   const { copied, copy } = useCopyToClipboard()
   const network = getNetwork(chainId as ChainId)
 
@@ -89,6 +106,7 @@ function AddressRow({ address, chainId }: { address: string; chainId: number }) 
         </Link>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        <AttributionBadge source={source} confidence={confidence} />
         <span className="text-xs text-muted-foreground">{network.shortName}</span>
         <Tooltip>
           <TooltipTrigger render={<button type="button" className="shrink-0" onClick={() => copy(address)} />}>

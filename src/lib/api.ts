@@ -210,6 +210,12 @@ export const FLAG_POTENTIAL_WALLET_CLUSTER = 'potential_wallet_cluster'
 export interface EntityAddressInfo {
   address: string
   chain_id: number
+  // This specific address's attribution to the entity — independent of
+  // EntitySummary.confidence below (confidence in the entity record
+  // itself), since two addresses on the same entity can be sourced
+  // differently (one official disclosure, one heuristic guess).
+  source: string
+  confidence: number
 }
 
 export interface EntitySummary {
@@ -218,6 +224,13 @@ export interface EntitySummary {
   type: string
   description: string
   confidence: number
+  // Set only when this summary is attached to one specific address
+  // (WalletOverview.entity, TraceNode.entity) — the address→entity
+  // attribution's own source/confidence, distinct from `confidence` above.
+  // Empty on getEntity()'s multi-address summary, which has no single
+  // address for them to describe.
+  source?: string
+  source_confidence?: number
   // Only populated by getEntity() below — wallet-overview and trace-node
   // entity summaries omit it (those already know the one address in
   // question from context, and never need the entity's full address list).

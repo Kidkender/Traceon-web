@@ -13,6 +13,7 @@ import { formatAssetQuantity, formatDisplayAmount, formatTokenAmount, sumCrossCh
 import { formatUsd } from '@/lib/currency'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TokenIcon } from '@/components/TokenIcon'
+import { AttributionBadge } from '@/components/AttributionBadge'
 
 const TOP_ASSET_COUNT = 5
 
@@ -163,6 +164,10 @@ export function WalletPage() {
                     <CardTitle className="text-xl">{overview.data.entity.name}</CardTitle>
                   </Link>
                   <Badge variant="secondary">{overview.data.entity.type}</Badge>
+                  <AttributionBadge
+                    source={overview.data.entity.source}
+                    confidence={overview.data.entity.source_confidence}
+                  />
                 </div>
                 <p className="mt-0.5 font-mono text-xs text-muted-foreground">{address}</p>
               </>
