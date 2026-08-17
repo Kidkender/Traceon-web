@@ -63,7 +63,13 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // false, not the upstream default of true: `true` positions the popup so
+  // the *currently selected* item lands directly over the trigger (native
+  // <select>-style), which at small viewport widths / long option labels
+  // can render the menu overlapping the trigger's own label instead of
+  // opening below it. This app's selects (chain pickers, sort filters)
+  // read better as a conventional anchored-below dropdown.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<

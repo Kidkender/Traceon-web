@@ -1,16 +1,10 @@
-import { type FormEvent, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Link, useLocation } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { Footer } from '@/components/Footer'
-import { isValidAddress } from '@/lib/address'
+import { SearchBox } from '@/components/SearchBox'
 import { cn } from '@/lib/utils'
-import { useNetwork } from '@/lib/NetworkContext'
-import { NETWORKS, type ChainId } from '@/lib/network'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate()
   const location = useLocation()
   const isToolPage = location.pathname !== '/'
   // Matches both the empty /trace (nav entry point, no address chosen yet)
@@ -25,20 +19,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // short page (like the homepage) just glues the footer to the bottom
   // edge with a stretch of empty space above it, which reads as broken.
   const fillHeight = isTracePage
-  const [query, setQuery] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const { chainId, setChainId } = useNetwork()
-
-  function handleSearch(e: FormEvent) {
-    e.preventDefault()
-    const address = query.trim()
-    if (!isValidAddress(address)) {
-      setError('Invalid Ethereum address')
-      return
-    }
-    setError(null)
-    navigate(`/wallets/${address}`)
-  }
 
   return (
     // fillHeight (TracePage only): h-screen + overflow-hidden makes this an
@@ -70,28 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             Visualization
           </Link>
-          <form onSubmit={handleSearch} className="flex-1">
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search wallet address (0x...)"
-              className="max-w-xl font-mono text-sm"
-            />
-            {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-          </form>
-          <Select value={String(chainId)} onValueChange={(v) => setChainId(Number(v) as ChainId)}>
-            <SelectTrigger className="hidden h-8 w-auto shrink-0 gap-1.5 rounded-full border-border px-2.5 py-1 text-xs sm:flex">
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {NETWORKS.map((n) => (
-                <SelectItem key={n.id} value={String(n.id)}>
-                  {n.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchBox />
         </div>
       </header>
       {/* `main` itself stays full-width and unconstrained — the max-w-6xl

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import { ArrowRight, Check, Copy, Fuel, SlidersHorizontal, Waypoints } from 'lucide-react'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   api,
   FLAG_POTENTIAL_FUND_FORWARDING,
@@ -22,7 +23,8 @@ import {
   type TraceEdge,
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
-import { useNetwork } from '@/lib/NetworkContext'
+import { attributionLevel, formatSource } from '@/lib/entity'
+import { DEFAULT_CHAIN_ID, NETWORKS, isChainId, type ChainId } from '@/lib/network'
 import { ASSUMED_DECIMALS_FALLBACK, formatDisplayAmount, formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
@@ -33,6 +35,10 @@ const ENTITY_TYPE_EXCHANGE = 'EXCHANGE'
 interface GraphNode {
   id: string
   isRoot: boolean
+  // Only set in path-finding mode — the `to` address a path search is
+  // resolving toward, styled distinctly from the root so both ends of the
+  // path are identifiable at a glance.
+  isTarget: boolean
   isForwarding: boolean
   isCluster: boolean
   entity?: EntitySummary
@@ -81,6 +87,59 @@ function createCollideForce(minDistance: number) {
   return force
 }
 
+// Filters live in the URL (see TracePage's use of useSearchParams) instead
+// of plain component state, so a trace with a specific direction/depth/
+// min-value/chain can be copy-pasted and reopened exactly as configured —
+// these parse+validate each query param back into a safe value, falling
+// back to the same defaults the filters started with before this existed.
+function parseDirection(value: string | null): TraceDirection {
+  return value === 'in' || value === 'all' ? value : 'out'
+}
+
+function parseDepth(value: string | null): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 2
+}
+
+function parseChainId(value: string | null): ChainId {
+  const n = Number(value)
+  return isChainId(n) ? n : DEFAULT_CHAIN_ID
+}
+
+// Total hop budget for path-finding (split forward/backward server-side) —
+// matches the backend's own min=2/max=8 binding validation.
+function parseMaxHops(value: string | null): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 2 && n <= 8 ? n : 8
+}
+
+function formatTimeSpan(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.round(hours / 24)}d`
+}
+
+// The URL stores from/to as RFC3339 (what the backend expects verbatim),
+// but a datetime-local <input> reads/writes its own timezone-naive
+// "YYYY-MM-DDTHH:mm" format — these convert between the two so the input
+// always shows the equivalent local time for whatever's in the URL.
+function isoToLocalInputValue(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localInputValueToIso(value: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+}
+
 export function TracePage() {
   // address is undefined on the bare /trace route (the header's
   // "Visualization" nav entry point) — CardContent below renders an empty
@@ -90,21 +149,51 @@ export function TracePage() {
   // internally (`enabled: !!address`) instead of skipping the call.
   const { address } = useParams<{ address: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [direction, setDirection] = useState<TraceDirection>('out')
-  const [depth, setDepth] = useState(2)
-  const [minValue, setMinValue] = useState('0')
-  // Token-address filter has no UI control anymore (removed to cut down on
-  // redundant inputs in the Filters popover), but the trace query still
-  // accepts one — kept as a constant instead of ripping it out of the query
-  // params too, so a future re-add doesn't need to touch the query wiring.
-  const asset = ''
+  // Sourced from the URL instead of plain state — see parseDirection/
+  // parseDepth/parseChainId above — so a trace with a specific direction/
+  // depth/min-value/chain is a link you can copy and share, not just
+  // in-memory UI state that resets the moment someone else opens the page.
+  const direction = parseDirection(searchParams.get('direction'))
+  const depth = parseDepth(searchParams.get('depth'))
+  const minValue = searchParams.get('min_value') ?? '0'
+  const chainId = parseChainId(searchParams.get('chain_id'))
+  // Token contract address — empty means "every asset". RFC3339, matching
+  // what the backend expects directly (no conversion needed on read).
+  const asset = searchParams.get('asset') ?? ''
+  const from = searchParams.get('from') ?? ''
+  const to = searchParams.get('to') ?? ''
+  const maxHops = parseMaxHops(searchParams.get('max_hops'))
+  // Presence of a valid, different `to_address` switches the whole page
+  // from "explore A's neighborhood" to "find a path from A to this
+  // address" — see discuss2.txt's "To (optional)" UI design. Case-folded
+  // since address is already lowercased by the route but a freshly-typed
+  // toAddress isn't yet.
+  const toAddress = searchParams.get('to_address') ?? ''
+  const isPathMode = !!address && isValidAddress(toAddress) && toAddress.toLowerCase() !== address.toLowerCase()
+
+  // Merges one param into the URL (replace, not push — every filter tweak
+  // getting its own back-button entry would make navigating "back" out of
+  // the trace page require mashing back through every slider tick instead
+  // of once). An empty value clears the param entirely rather than storing
+  // an empty string, so optional filters (asset/from/to) round-trip back
+  // to "unset" instead of an empty-but-present query param.
+  function updateFilter(key: string, value: string | null) {
+    if (value === null) return
+    const next = new URLSearchParams(searchParams)
+    if (value === '') next.delete(key)
+    else next.set(key, value)
+    setSearchParams(next, { replace: true })
+  }
+
   const [selectedEdge, setSelectedEdge] = useState<TraceEdge | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [addressQuery, setAddressQuery] = useState(address ?? '')
   const [addressError, setAddressError] = useState<string | null>(null)
+  const [toQuery, setToQuery] = useState(toAddress)
+  const [toError, setToError] = useState<string | null>(null)
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
-  const { chainId } = useNetwork()
 
   function handleAddressSearch(e: FormEvent) {
     e.preventDefault()
@@ -114,15 +203,60 @@ export function TracePage() {
       return
     }
     setAddressError(null)
-    navigate(`/trace/${next}`)
+    // Carries the current filters over to the new root — re-rooting a
+    // trace usually means "same investigation, different starting point,"
+    // not "reset everything."
+    navigate(`/trace/${next}?${searchParams.toString()}`)
+  }
+
+  // A blank submit clears path-finding mode and drops back to neighborhood
+  // exploration — same "commit on Enter" pattern as the From address box.
+  function handleToSearch(e: FormEvent) {
+    e.preventDefault()
+    const next = toQuery.trim()
+    if (next === '') {
+      setToError(null)
+      updateFilter('to_address', '')
+      return
+    }
+    if (!isValidAddress(next)) {
+      setToError('Invalid Ethereum address')
+      return
+    }
+    setToError(null)
+    updateFilter('to_address', next)
   }
 
   const trace = useQuery({
-    queryKey: ['trace', chainId, address, direction, depth, minValue, asset],
+    queryKey: ['trace', chainId, address, direction, depth, minValue, asset, from, to],
     // Non-null assertion is safe here: `enabled` keeps this from firing
     // until address exists.
-    queryFn: () => api.trace(address!, { direction, depth, min_value: minValue, asset: asset || undefined }, chainId),
-    enabled: !!address,
+    queryFn: () =>
+      api.trace(
+        address!,
+        {
+          direction,
+          depth,
+          min_value: minValue,
+          asset: asset || undefined,
+          from: from || undefined,
+          to: to || undefined,
+        },
+        chainId,
+      ),
+    enabled: !!address && !isPathMode,
+  })
+
+  const pathResult = useQuery({
+    queryKey: ['path', chainId, address, toAddress, asset, from, to, maxHops],
+    queryFn: () =>
+      api.findPath(
+        address!,
+        toAddress,
+        { asset: asset || undefined, from_time: from || undefined, to_time: to || undefined, max_hops: maxHops },
+        chainId,
+      ),
+    enabled: isPathMode,
   })
 
   const selectedTx = useQuery({
@@ -132,11 +266,38 @@ export function TracePage() {
   })
 
   const graphData = useMemo(() => {
+    // Path-finding mode draws the union of every returned candidate path —
+    // nodes/edges have no entity/flag enrichment here (PathResult doesn't
+    // carry it; see internal/service/path.go), unlike neighborhood trace.
+    if (isPathMode) {
+      if (!pathResult.data) return { nodes: [] as GraphNode[], links: [] as GraphLink[] }
+      const nodeIds = new Set<string>()
+      const links: GraphLink[] = []
+      for (const p of pathResult.data.paths) {
+        for (const e of p.edges) {
+          nodeIds.add(e.from)
+          nodeIds.add(e.to)
+          links.push({ source: e.from, target: e.to, edge: e })
+        }
+      }
+      return {
+        nodes: Array.from(nodeIds).map((id) => ({
+          id,
+          isRoot: id === address,
+          isTarget: id === toAddress,
+          isForwarding: false,
+          isCluster: false,
+        })),
+        links,
+      }
+    }
+
     if (!trace.data) return { nodes: [] as GraphNode[], links: [] as GraphLink[] }
     return {
       nodes: trace.data.nodes.map((n) => ({
         id: n.address,
         isRoot: n.address === address,
+        isTarget: false,
         isForwarding: n.flags?.includes(FLAG_POTENTIAL_FUND_FORWARDING) ?? false,
         isCluster: n.flags?.includes(FLAG_POTENTIAL_WALLET_CLUSTER) ?? false,
         entity: n.entity,
@@ -144,10 +305,11 @@ export function TracePage() {
       })),
       links: trace.data.edges.map((e) => ({ source: e.from, target: e.to, edge: e })),
     }
-  }, [trace.data, address])
+  }, [isPathMode, pathResult.data, trace.data, address, toAddress])
 
   function nodeColor(n: GraphNode): string {
     if (n.isRoot) return '#34d399'
+    if (n.isTarget) return '#818cf8'
     if (n.isForwarding && n.isCluster) return '#ec4899'
     if (n.isCluster) return '#a855f7'
     if (n.isForwarding) return '#f59e0b'
@@ -255,7 +417,7 @@ export function TracePage() {
     ctx.arc(x, y, r, 0, 2 * Math.PI)
     ctx.fillStyle = nodeColor(n)
     ctx.fill()
-    if (n.isRoot) {
+    if (n.isRoot || n.isTarget) {
       ctx.lineWidth = 0.6
       ctx.strokeStyle = '#ffffff'
       ctx.stroke()
@@ -279,7 +441,11 @@ export function TracePage() {
 
   function nodeLabel(n: GraphNode): string {
     const lines: string[] = [n.id]
-    if (n.entity) lines.push(`🏷 ${n.entity.name} (${n.entity.type})`)
+    if (n.entity) {
+      const level = attributionLevel(n.entity.source_confidence)
+      const levelLabel = level === 'confirmed' ? 'Confirmed' : level === 'likely' ? 'Likely' : 'Unknown'
+      lines.push(`🏷 ${n.entity.name} (${n.entity.type}) — ${levelLabel}, ${formatSource(n.entity.source)}`)
+    }
     if (n.labels?.length) lines.push(n.labels.map((l) => l.name).join(', '))
     if (n.isForwarding) lines.push('⚠ potential fund forwarding (heuristic)')
     if (n.isCluster) lines.push('⚠ potential wallet cluster (heuristic)')
@@ -323,6 +489,22 @@ export function TracePage() {
             )}
           </form>
 
+          {/* Optional second address — filling this in switches the whole
+              page from "explore A's neighborhood" to "find a path from A
+              to this address" (see isPathMode). Submitting empty clears it
+              back to neighborhood mode. */}
+          {address && (
+            <form onSubmit={handleToSearch} className="relative">
+              <Input
+                value={toQuery}
+                onChange={(e) => setToQuery(e.target.value)}
+                placeholder="To (optional) — find path"
+                className="h-8 w-56 rounded-full bg-card/90 font-mono text-xs backdrop-blur-sm"
+              />
+              {toError && <p className="absolute top-full left-3 mt-1 text-xs text-destructive">{toError}</p>}
+            </form>
+          )}
+
           {address && (
             <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
               <PopoverTrigger
@@ -337,35 +519,100 @@ export function TracePage() {
                 <SlidersHorizontal className="size-3.5" />
                 Filters
               </PopoverTrigger>
-              <PopoverContent className="flex w-64 flex-col gap-4">
+              <PopoverContent className="flex w-72 flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">Direction</span>
-                  <Select value={direction} onValueChange={(v) => setDirection(v as TraceDirection)}>
+                  <span className="text-xs text-muted-foreground">Chain</span>
+                  <Select value={String(chainId)} onValueChange={(v) => updateFilter('chain_id', v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="out">Outgoing</SelectItem>
-                      <SelectItem value="in">Incoming</SelectItem>
-                      <SelectItem value="all">Both</SelectItem>
+                      {NETWORKS.map((n) => (
+                        <SelectItem key={n.id} value={String(n.id)}>
+                          {n.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
+                {/* Direction/Depth/Min value only apply to neighborhood
+                    exploration — path-finding replaces them with Max hops
+                    below, since the search is inherently bidirectional and
+                    has no single "direction" or "how far from the root". */}
+                {!isPathMode && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs text-muted-foreground">Direction</span>
+                      <Select value={direction} onValueChange={(v) => updateFilter('direction', v)}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="out">Outgoing</SelectItem>
+                          <SelectItem value="in">Incoming</SelectItem>
+                          <SelectItem value="all">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs text-muted-foreground">Depth: {depth}</span>
+                      <Slider
+                        value={[depth]}
+                        min={1}
+                        max={5}
+                        step={1}
+                        onValueChange={(v) => updateFilter('depth', String(Array.isArray(v) ? v[0] : v))}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs text-muted-foreground">Min value</span>
+                      <Input value={minValue} onChange={(e) => updateFilter('min_value', e.target.value)} />
+                    </div>
+                  </>
+                )}
+
+                {isPathMode && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs text-muted-foreground">Max hops: {maxHops}</span>
+                    <Slider
+                      value={[maxHops]}
+                      min={2}
+                      max={8}
+                      step={1}
+                      onValueChange={(v) => updateFilter('max_hops', String(Array.isArray(v) ? v[0] : v))}
+                    />
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">Depth: {depth}</span>
-                  <Slider
-                    value={[depth]}
-                    min={1}
-                    max={5}
-                    step={1}
-                    onValueChange={(v) => setDepth(Array.isArray(v) ? v[0] : v)}
+                  <span className="text-xs text-muted-foreground">Asset (token contract)</span>
+                  <Input
+                    value={asset}
+                    onChange={(e) => updateFilter('asset', e.target.value.trim())}
+                    placeholder="All assets"
+                    className="font-mono"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">Min value</span>
-                  <Input value={minValue} onChange={(e) => setMinValue(e.target.value)} />
+                  <span className="text-xs text-muted-foreground">From</span>
+                  <Input
+                    type="datetime-local"
+                    value={isoToLocalInputValue(from)}
+                    onChange={(e) => updateFilter('from', localInputValueToIso(e.target.value))}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">To</span>
+                  <Input
+                    type="datetime-local"
+                    value={isoToLocalInputValue(to)}
+                    onChange={(e) => updateFilter('to', localInputValueToIso(e.target.value))}
+                  />
                 </div>
               </PopoverContent>
             </Popover>
@@ -381,9 +628,27 @@ export function TracePage() {
               </p>
             </div>
           )}
-          {address && trace.isLoading && <Skeleton className="h-full min-h-[400px] w-full" />}
-          {address && trace.isError && <p className="p-6 text-sm text-destructive">Failed to load trace.</p>}
-          {address && trace.data && (
+          {address && !isPathMode && trace.isLoading && <Skeleton className="h-full min-h-[400px] w-full" />}
+          {address && !isPathMode && trace.isError && (
+            <p className="p-6 text-sm text-destructive">Failed to load trace.</p>
+          )}
+
+          {address && isPathMode && pathResult.isLoading && <Skeleton className="h-full min-h-[400px] w-full" />}
+          {address && isPathMode && pathResult.isError && (
+            <p className="p-6 text-sm text-destructive">Failed to search for a path.</p>
+          )}
+          {address && isPathMode && pathResult.data && pathResult.data.paths.length === 0 && (
+            <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-3 text-center">
+              <Waypoints className="size-8 text-muted-foreground/50" strokeWidth={1.5} />
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {pathResult.data.meta.complete
+                  ? 'No path found between these addresses under the selected filters.'
+                  : `No path found within the search limits (${pathResult.data.meta.nodes_expanded} nodes expanded, up to ${pathResult.data.meta.max_hops} hops). A path may still exist outside this search space.`}
+              </p>
+            </div>
+          )}
+
+          {address && ((!isPathMode && trace.data) || (isPathMode && (pathResult.data?.paths.length ?? 0) > 0)) && (
             <ForceGraph2D
               ref={fgRef}
               graphData={graphData}
@@ -398,7 +663,7 @@ export function TracePage() {
               linkDirectionalArrowRelPos={1}
               linkLabel={(l: GraphLink) => `${formatDisplayAmount(l.edge)} (${shortenAddress(l.edge.token_address)})`}
               onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
-              onNodeClick={(n: GraphNode) => navigate(`/trace/${n.id}`)}
+              onNodeClick={(n: GraphNode) => navigate(`/trace/${n.id}?${searchParams.toString()}`)}
               onLinkClick={(l: GraphLink) => setSelectedEdge(l.edge)}
             />
           )}
@@ -407,8 +672,12 @@ export function TracePage() {
         {/* Legend overlaid on the canvas's own top-right corner (mirroring
             the filter chips at top-left) instead of a separate row below it
             — bottom-right would sit past the fold now that the canvas
-            fills the full viewport height, requiring a scroll to see it. */}
-        {address && (
+            fills the full viewport height, requiring a scroll to see it.
+            Path-finding mode swaps this for a path list + the "observed
+            connectivity, not proof of funds" disclaimer instead — the
+            neighborhood-trace legend (forwarding/cluster/exchange colors)
+            doesn't apply to path results at all. */}
+        {address && !isPathMode && (
           <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1 rounded-lg bg-card/80 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
             <span className="flex items-center gap-1.5">
               Root wallet <span className="size-2.5 rounded-full" style={{ backgroundColor: '#34d399' }} />
@@ -433,6 +702,41 @@ export function TracePage() {
               </span>
             </span>
             <span className="text-muted-foreground/70">Heuristics — not proof of common ownership</span>
+          </div>
+        )}
+
+        {address && isPathMode && pathResult.data && pathResult.data.paths.length > 0 && (
+          <div className="absolute top-3 right-3 z-10 flex max-w-xs flex-col gap-2 rounded-lg bg-card/90 px-3 py-2.5 text-xs backdrop-blur-sm">
+            <p className="flex items-center gap-1.5 font-medium text-foreground">
+              <span className="size-2.5 rounded-full" style={{ backgroundColor: '#34d399' }} /> From
+              <span className="size-2.5 rounded-full" style={{ backgroundColor: '#818cf8' }} /> To
+            </p>
+            <div className="flex flex-col gap-1 border-t border-border pt-2">
+              {pathResult.data.paths.map((p, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 text-muted-foreground">
+                  <span>
+                    #{i + 1} · {p.hop_count} hop{p.hop_count > 1 ? 's' : ''}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {p.tight_timing && (
+                      <span className="text-amber-500" title="Hops land close together in time">
+                        ⚠ tight
+                      </span>
+                    )}
+                    {formatTimeSpan(p.time_span_seconds)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="border-t border-border pt-2 text-muted-foreground/70">
+              Observed transaction connectivity only — not proof that specific funds traveled through every hop.
+            </p>
+            {!pathResult.data.meta.complete && (
+              <p className="text-amber-500">
+                ⚠ Search budget reached ({pathResult.data.meta.nodes_expanded} nodes expanded) — more paths may exist
+                beyond this limit.
+              </p>
+            )}
           </div>
         )}
       </Card>
@@ -569,9 +873,14 @@ function CopyField({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <div className="mt-0.5 flex items-center gap-2">
         <p className="min-w-0 flex-1 truncate font-mono text-xs">{value}</p>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" onClick={() => copy(value)}>
-          {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="ghost" size="icon-sm" className="shrink-0" onClick={() => copy(value)} />}
+          >
+            {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          </TooltipTrigger>
+          <TooltipContent>Copy {label.toLowerCase()}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )

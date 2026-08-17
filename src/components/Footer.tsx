@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
-import { useNetwork } from '@/lib/NetworkContext'
-import { getNetwork } from '@/lib/network'
+import { NETWORKS } from '@/lib/network'
+import { TokenIcon } from '@/components/TokenIcon'
 
 const productLinks = [
   { label: 'Wallet Explorer', to: '/' },
@@ -15,10 +15,11 @@ const resourceLinks = [
   { label: 'Status', href: '#' },
 ]
 
+// "Not affiliated with any Foundation" (plural, generic) instead of naming
+// one chain — the app spans every network in NETWORKS, and this disclaimer
+// no longer has a single "current chain" to hang off (see discuss.txt: chain
+// is a per-page concern now, not global app state).
 export function Footer({ minimal = false }: { minimal?: boolean }) {
-  const { chainId } = useNetwork()
-  const network = getNetwork(chainId)
-
   // Tool pages (trace/wallet) want vertical space for the data, not a
   // marketing footer — same legal disclaimer and copyright, just without
   // the logo/tagline/link columns that only make sense as a landing-page
@@ -27,7 +28,7 @@ export function Footer({ minimal = false }: { minimal?: boolean }) {
     return (
       <footer className="mt-auto border-t border-border bg-card/40">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Traceon. Not affiliated with the {network.shortName} Foundation.</p>
+          <p>© {new Date().getFullYear()} Traceon. Not affiliated with any underlying network foundation.</p>
           <p className="max-w-2xl">
             Entity labels, fund-forwarding, and wallet-cluster flags are heuristics — not proof of ownership,
             custody, or wrongdoing.
@@ -44,7 +45,7 @@ export function Footer({ minimal = false }: { minimal?: boolean }) {
           <div className="col-span-2 flex flex-col gap-3 sm:col-span-1">
             <Logo />
             <p className="max-w-[22ch] text-sm text-muted-foreground">
-              On-chain wallet intelligence and fund-flow tracing for {network.shortName}.
+              On-chain wallet intelligence and fund-flow tracing across chains.
             </p>
           </div>
 
@@ -64,17 +65,19 @@ export function Footer({ minimal = false }: { minimal?: boolean }) {
             ))}
           </FooterColumn>
 
-          <FooterColumn title="Network">
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-              {network.name}
-            </span>
-            <span>Chain ID {network.id}</span>
+          <FooterColumn title="Networks">
+            {NETWORKS.map((n) => (
+              <span key={n.id} className="flex items-center gap-1.5">
+                <TokenIcon symbol={n.nativeSymbol} size={14} />
+                {n.shortName}
+                <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+              </span>
+            ))}
           </FooterColumn>
         </div>
 
         <div className="mt-10 flex flex-col gap-3 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Traceon. Not affiliated with the {network.shortName} Foundation.</p>
+          <p>© {new Date().getFullYear()} Traceon. Not affiliated with any underlying network foundation.</p>
           <p className="max-w-2xl">
             Entity labels, fund-forwarding, and wallet-cluster flags are heuristics derived from on-chain patterns —
             not proof of ownership, custody, or wrongdoing. Verify independently before acting on them.
