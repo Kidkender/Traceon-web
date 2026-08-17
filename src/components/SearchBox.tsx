@@ -1,12 +1,13 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
+import { api, type SearchResultItem } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
 import { useDebounce } from '@/lib/useDebounce'
 import { getNetwork, type ChainId } from '@/lib/network'
-import { Input } from '@/components/ui/input'
 import { TokenIcon } from '@/components/TokenIcon'
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox'
+import { InputGroupAddon } from '@/components/ui/input-group'
 
 const MIN_QUERY_LENGTH = 2
 const DEBOUNCE_MS = 250
@@ -15,12 +16,35 @@ const DEBOUNCE_MS = 250
 // it resolves an address or entity name to a specific address, and never
 // asks the caller which chain, because "which address" and "which chain"
 // are separate decisions. The address/wallet page owns the chain choice.
+//
+// Built on Combobox instead of a hand-rolled dropdown so arrow-key
+// navigation, Enter-to-select, and ARIA listbox semantics come for free
+// instead of being reimplemented — the list itself is server-filtered
+// (filter={null} disables Base UI's own client-side text matching, since
+// an entity-name hit like "Titan Builder" wouldn't textually match the
+// address it resolves to).
 export function SearchBox() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [isOpen, setIsOpen] = useState(false)
-  const blurTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Cmd/Ctrl+K jumps to the search box from anywhere in the app — a
+  // familiar shortcut on tools like this (Etherscan, Arkham) for power
+  // users who don't want to reach for the mouse every time they look up
+  // an address. preventDefault stops the browser's own bindings for the
+  // key (Chrome's "focus address bar" on some platforms, Firefox's "quick
+  // find") from firing instead.
+  useEffect(() => {
+    function handleGlobalKeyDown(e: globalThis.KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return
+      e.preventDefault()
+      inputRef.current?.focus()
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
 
   const debouncedQuery = useDebounce(query.trim(), DEBOUNCE_MS)
   const suggestions = useQuery({
@@ -31,13 +55,18 @@ export function SearchBox() {
 
   function goToAddress(address: string) {
     setError(null)
-    setIsOpen(false)
+    setOpen(false)
     setQuery('')
     navigate(`/address/${address}`)
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  // Fallback for typing a full address and hitting Enter before the
+  // suggestion dropdown has anything to select (too short a query, or a
+  // freshly-pasted address the debounce hasn't resolved yet) — same
+  // "validate and navigate" behavior the search box had before suggestions
+  // existed.
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter' || isDropdownVisible) return
     const address = query.trim()
     if (!isValidAddress(address)) {
       setError('Invalid Ethereum address')
@@ -46,50 +75,47 @@ export function SearchBox() {
     goToAddress(address)
   }
 
-  const showDropdown =
-    isOpen &&
-    debouncedQuery.length >= MIN_QUERY_LENGTH &&
-    (suggestions.isLoading || (suggestions.data?.length ?? 0) > 0)
+  const isDropdownVisible = open && debouncedQuery.length >= MIN_QUERY_LENGTH
+  const items = suggestions.data ?? []
 
   return (
-    <form onSubmit={handleSubmit} className="relative flex-1">
-      <Input
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value)
+    <div className="max-w-xl flex-1">
+      <Combobox<SearchResultItem>
+        items={items}
+        filter={null}
+        inputValue={query}
+        onInputValueChange={(value) => {
+          setQuery(value)
           setError(null)
         }}
-        onFocus={() => {
-          if (blurTimeout.current) clearTimeout(blurTimeout.current)
-          setIsOpen(true)
+        itemToStringLabel={(item) => item.address}
+        open={isDropdownVisible}
+        onOpenChange={setOpen}
+        onValueChange={(item) => {
+          if (item) goToAddress(item.address)
         }}
-        onBlur={() => {
-          // A suggestion row's click needs to land before the dropdown
-          // disappears — an immediate close on blur fires first and eats
-          // the click, so give it one tick via a short delay instead.
-          blurTimeout.current = setTimeout(() => setIsOpen(false), 150)
-        }}
-        placeholder="Search wallet address or entity name (0x... or Titan Builder)"
-        className="max-w-xl font-mono text-sm"
-        autoComplete="off"
-      />
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-
-      {showDropdown && (
-        <div className="absolute top-full left-0 z-20 mt-1.5 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-          {suggestions.isLoading && <div className="px-3 py-2.5 text-xs text-muted-foreground">Searching…</div>}
-          {!suggestions.isLoading &&
-            suggestions.data?.map((item) => (
-              <button
-                key={item.address}
-                type="button"
-                // mousedown fires before the input's blur — preventDefault
-                // stops focus from ever leaving the input, so the blur
-                // timeout above never even needs to run for this path.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => goToAddress(item.address)}
-                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted"
-              >
+      >
+        <ComboboxInput
+          ref={inputRef}
+          placeholder="Search wallet address or entity name (0x... or Titan Builder)"
+          className="font-mono text-sm"
+          showTrigger={false}
+          autoComplete="off"
+          onKeyDown={handleKeyDown}
+        >
+          {!query && (
+            <InputGroupAddon align="inline-end">
+              <kbd className="hidden items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground sm:flex">
+                <span>⌘</span>K
+              </kbd>
+            </InputGroupAddon>
+          )}
+        </ComboboxInput>
+        <ComboboxContent>
+          <ComboboxEmpty>{suggestions.isLoading ? 'Searching…' : 'No results found.'}</ComboboxEmpty>
+          <ComboboxList>
+            {(item: SearchResultItem) => (
+              <ComboboxItem key={item.address} value={item} className="justify-between pr-2">
                 <div className="flex min-w-0 flex-col">
                   {item.entity ? (
                     <>
@@ -117,10 +143,12 @@ export function SearchBox() {
                     )
                   })}
                 </div>
-              </button>
-            ))}
-        </div>
-      )}
-    </form>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
   )
 }

@@ -26,6 +26,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TokenIcon } from '@/components/TokenIcon'
 
 const FEED_LIMIT = 25
@@ -430,22 +431,28 @@ function AddressCell({ address, entityName }: { address: string; entityName?: st
       <Link to={`/address/${address}`} className="transition-colors hover:text-primary" title={entityName ? address : undefined}>
         {entityName ?? shortenAddress(address)}
       </Link>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault()
-          copy(address)
-        }}
-        className="opacity-0 transition-opacity group-hover/addr:opacity-100 focus-visible:opacity-100"
-        title="Copy address"
-        aria-label="Copy address"
-      >
-        {copied ? (
-          <Check className="size-3 text-emerald-500" />
-        ) : (
-          <Copy className="size-3 text-muted-foreground hover:text-foreground" />
-        )}
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                copy(address)
+              }}
+              className="opacity-0 transition-opacity group-hover/addr:opacity-100 focus-visible:opacity-100"
+              aria-label="Copy address"
+            />
+          }
+        >
+          {copied ? (
+            <Check className="size-3 text-emerald-500" />
+          ) : (
+            <Copy className="size-3 text-muted-foreground hover:text-foreground" />
+          )}
+        </TooltipTrigger>
+        <TooltipContent>Copy address</TooltipContent>
+      </Tooltip>
     </span>
   )
 }

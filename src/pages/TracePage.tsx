@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   api,
   FLAG_POTENTIAL_FUND_FORWARDING,
@@ -589,9 +590,14 @@ function CopyField({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <div className="mt-0.5 flex items-center gap-2">
         <p className="min-w-0 flex-1 truncate font-mono text-xs">{value}</p>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" onClick={() => copy(value)}>
-          {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="ghost" size="icon-sm" className="shrink-0" onClick={() => copy(value)} />}
+          >
+            {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          </TooltipTrigger>
+          <TooltipContent>Copy {label.toLowerCase()}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )

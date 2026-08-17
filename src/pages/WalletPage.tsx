@@ -11,7 +11,7 @@ import { shortenAddress } from '@/lib/address'
 import { DEFAULT_CHAIN_ID, getNetwork, NETWORKS, type ChainId } from '@/lib/network'
 import { formatAssetQuantity, formatDisplayAmount, formatTokenAmount, sumCrossChainAmount } from '@/lib/token'
 import { formatUsd } from '@/lib/currency'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TokenIcon } from '@/components/TokenIcon'
 
 const TOP_ASSET_COUNT = 5
@@ -176,27 +176,22 @@ export function WalletPage() {
                 per-chain, unlike holdings above which is already multichain.
                 Switching here re-scopes those three queries; it never gates
                 whether the address itself was found. */}
-            <div className="flex items-center gap-1 rounded-full border border-border p-0.5">
-              {NETWORKS.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => {
-                    setUserPickedChain(true)
-                    setChainId(n.id)
-                    setPage(1)
-                  }}
-                  className={cn(
-                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                    chainId === n.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {n.shortName}
-                </button>
-              ))}
-            </div>
+            <Tabs
+              value={String(chainId)}
+              onValueChange={(value) => {
+                setUserPickedChain(true)
+                setChainId(Number(value) as ChainId)
+                setPage(1)
+              }}
+            >
+              <TabsList>
+                {NETWORKS.map((n) => (
+                  <TabsTrigger key={n.id} value={String(n.id)}>
+                    {n.shortName}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
             <Button size="sm" render={<Link to={`/trace/${address}`}>View Trace</Link>} />
           </div>
         </CardHeader>
@@ -229,99 +224,86 @@ export function WalletPage() {
         </CardContent>
       </Card>
 
-      <div className="flex gap-2">
-        <Button
-          variant={tab === 'transactions' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => {
-            setTab('transactions')
-            setPage(1)
-          }}
-        >
-          Transactions
-        </Button>
-        <Button
-          variant={tab === 'transfers' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => {
-            setTab('transfers')
-            setPage(1)
-          }}
-        >
-          Token Transfers
-        </Button>
-        <Button variant={tab === 'holdings' ? 'default' : 'outline'} size="sm" onClick={() => setTab('holdings')}>
-          Holdings
-        </Button>
-      </div>
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          setTab(value as 'transactions' | 'transfers' | 'holdings')
+          setPage(1)
+        }}
+      >
+        <TabsList>
+          <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="transfers">Token Transfers</TabsTrigger>
+          <TabsTrigger value="holdings">Holdings</TabsTrigger>
+        </TabsList>
 
-      {tab === 'transactions' && (
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Hash</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Timestamp</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.data?.items.map((tx) => (
-                  <TableRow key={tx.hash}>
-                    <TableCell className="font-mono text-xs">{shortenAddress(tx.hash)}</TableCell>
-                    <TableCell className="font-mono text-xs">{shortenAddress(tx.from_address)}</TableCell>
-                    <TableCell className="font-mono text-xs">{shortenAddress(tx.to_address)}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {formatTokenAmount(tx.value, 18)} {network.nativeSymbol}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={tx.status === 'success' ? 'default' : 'destructive'}>{tx.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{tx.timestamp}</TableCell>
+        <TabsContent value="transactions">
+          <Card>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Hash</TableHead>
+                    <TableHead>From</TableHead>
+                    <TableHead>To</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Timestamp</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {transactions.data?.items.map((tx) => (
+                    <TableRow key={tx.hash}>
+                      <TableCell className="font-mono text-xs">{shortenAddress(tx.hash)}</TableCell>
+                      <TableCell className="font-mono text-xs">{shortenAddress(tx.from_address)}</TableCell>
+                      <TableCell className="font-mono text-xs">{shortenAddress(tx.to_address)}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {formatTokenAmount(tx.value, 18)} {network.nativeSymbol}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={tx.status === 'success' ? 'default' : 'destructive'}>{tx.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{tx.timestamp}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {tab === 'transfers' && (
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tx Hash</TableHead>
-                  <TableHead>Token</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead>Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transfers.data?.items.map((t, i) => (
-                  <TableRow key={`${t.transaction_hash}-${i}`}>
-                    <TableCell className="font-mono text-xs">{shortenAddress(t.transaction_hash)}</TableCell>
-                    <TableCell className="font-mono text-xs" title={t.token_address}>
-                      {t.token_symbol || shortenAddress(t.token_address)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{shortenAddress(t.from_address)}</TableCell>
-                    <TableCell className="font-mono text-xs">{shortenAddress(t.to_address)}</TableCell>
-                    <TableCell className="font-mono text-xs">{formatDisplayAmount(t)}</TableCell>
+        <TabsContent value="transfers">
+          <Card>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tx Hash</TableHead>
+                    <TableHead>Token</TableHead>
+                    <TableHead>From</TableHead>
+                    <TableHead>To</TableHead>
+                    <TableHead>Amount</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {transfers.data?.items.map((t, i) => (
+                    <TableRow key={`${t.transaction_hash}-${i}`}>
+                      <TableCell className="font-mono text-xs">{shortenAddress(t.transaction_hash)}</TableCell>
+                      <TableCell className="font-mono text-xs" title={t.token_address}>
+                        {t.token_symbol || shortenAddress(t.token_address)}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{shortenAddress(t.from_address)}</TableCell>
+                      <TableCell className="font-mono text-xs">{shortenAddress(t.to_address)}</TableCell>
+                      <TableCell className="font-mono text-xs">{formatDisplayAmount(t)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {tab === 'holdings' && (
+        <TabsContent value="holdings">
         <div className="flex flex-col gap-6">
           {holdings.isLoading && <Skeleton className="h-32 w-full" />}
           {holdings.isError && <p className="text-sm text-destructive">Failed to load holdings.</p>}
@@ -426,7 +408,8 @@ export function WalletPage() {
             </>
           )}
         </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
