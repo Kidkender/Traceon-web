@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import { ArrowRight, Check, Copy, Fuel, SlidersHorizontal, Waypoints } from 'lucide-react'
@@ -24,7 +24,7 @@ import {
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
 import { attributionLevel, formatSource } from '@/lib/entity'
-import { DEFAULT_CHAIN_ID, NETWORKS, type ChainId } from '@/lib/network'
+import { DEFAULT_CHAIN_ID, NETWORKS, isChainId, type ChainId } from '@/lib/network'
 import { ASSUMED_DECIMALS_FALLBACK, formatDisplayAmount, formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
@@ -83,6 +83,25 @@ function createCollideForce(minDistance: number) {
   return force
 }
 
+// Filters live in the URL (see TracePage's use of useSearchParams) instead
+// of plain component state, so a trace with a specific direction/depth/
+// min-value/chain can be copy-pasted and reopened exactly as configured —
+// these parse+validate each query param back into a safe value, falling
+// back to the same defaults the filters started with before this existed.
+function parseDirection(value: string | null): TraceDirection {
+  return value === 'in' || value === 'all' ? value : 'out'
+}
+
+function parseDepth(value: string | null): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 2
+}
+
+function parseChainId(value: string | null): ChainId {
+  const n = Number(value)
+  return isChainId(n) ? n : DEFAULT_CHAIN_ID
+}
+
 export function TracePage() {
   // address is undefined on the bare /trace route (the header's
   // "Visualization" nav entry point) — CardContent below renders an empty
@@ -92,25 +111,38 @@ export function TracePage() {
   // internally (`enabled: !!address`) instead of skipping the call.
   const { address } = useParams<{ address: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [direction, setDirection] = useState<TraceDirection>('out')
-  const [depth, setDepth] = useState(2)
-  const [minValue, setMinValue] = useState('0')
+  // Sourced from the URL instead of plain state — see parseDirection/
+  // parseDepth/parseChainId above — so a trace with a specific direction/
+  // depth/min-value/chain is a link you can copy and share, not just
+  // in-memory UI state that resets the moment someone else opens the page.
+  const direction = parseDirection(searchParams.get('direction'))
+  const depth = parseDepth(searchParams.get('depth'))
+  const minValue = searchParams.get('min_value') ?? '0'
+  const chainId = parseChainId(searchParams.get('chain_id'))
   // Token-address filter has no UI control anymore (removed to cut down on
   // redundant inputs in the Filters popover), but the trace query still
   // accepts one — kept as a constant instead of ripping it out of the query
   // params too, so a future re-add doesn't need to touch the query wiring.
   const asset = ''
+
+  // Merges one param into the URL (replace, not push — every filter tweak
+  // getting its own back-button entry would make navigating "back" out of
+  // the trace page require mashing back through every slider tick instead
+  // of once).
+  function updateFilter(key: string, value: string | null) {
+    if (value === null) return
+    const next = new URLSearchParams(searchParams)
+    next.set(key, value)
+    setSearchParams(next, { replace: true })
+  }
+
   const [selectedEdge, setSelectedEdge] = useState<TraceEdge | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [addressQuery, setAddressQuery] = useState(address ?? '')
   const [addressError, setAddressError] = useState<string | null>(null)
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
-  // Trace is inherently chain-specific (a single fund-flow graph on one
-  // network), so unlike Address/Search this stays local state with no
-  // multichain aggregation — just no longer sourced from a global header
-  // switcher. Lives in the Filters popover next to Direction/Depth/Min value.
-  const [chainId, setChainId] = useState<ChainId>(DEFAULT_CHAIN_ID)
 
   function handleAddressSearch(e: FormEvent) {
     e.preventDefault()
@@ -120,7 +152,10 @@ export function TracePage() {
       return
     }
     setAddressError(null)
-    navigate(`/trace/${next}`)
+    // Carries the current filters over to the new root — re-rooting a
+    // trace usually means "same investigation, different starting point,"
+    // not "reset everything."
+    navigate(`/trace/${next}?${searchParams.toString()}`)
   }
 
   const trace = useQuery({
@@ -350,7 +385,7 @@ export function TracePage() {
               <PopoverContent className="flex w-64 flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Chain</span>
-                  <Select value={String(chainId)} onValueChange={(v) => setChainId(Number(v) as ChainId)}>
+                  <Select value={String(chainId)} onValueChange={(v) => updateFilter('chain_id', v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -366,7 +401,7 @@ export function TracePage() {
 
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Direction</span>
-                  <Select value={direction} onValueChange={(v) => setDirection(v as TraceDirection)}>
+                  <Select value={direction} onValueChange={(v) => updateFilter('direction', v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -385,13 +420,13 @@ export function TracePage() {
                     min={1}
                     max={5}
                     step={1}
-                    onValueChange={(v) => setDepth(Array.isArray(v) ? v[0] : v)}
+                    onValueChange={(v) => updateFilter('depth', String(Array.isArray(v) ? v[0] : v))}
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Min value</span>
-                  <Input value={minValue} onChange={(e) => setMinValue(e.target.value)} />
+                  <Input value={minValue} onChange={(e) => updateFilter('min_value', e.target.value)} />
                 </div>
               </PopoverContent>
             </Popover>
@@ -424,7 +459,7 @@ export function TracePage() {
               linkDirectionalArrowRelPos={1}
               linkLabel={(l: GraphLink) => `${formatDisplayAmount(l.edge)} (${shortenAddress(l.edge.token_address)})`}
               onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
-              onNodeClick={(n: GraphNode) => navigate(`/trace/${n.id}`)}
+              onNodeClick={(n: GraphNode) => navigate(`/trace/${n.id}?${searchParams.toString()}`)}
               onLinkClick={(l: GraphLink) => setSelectedEdge(l.edge)}
             />
           )}
