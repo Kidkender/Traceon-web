@@ -6,11 +6,15 @@ export interface NetworkInfo {
   id: ChainId
   name: string
   shortName: string
+  // Ticker for the chain's native currency — matches token_symbol on
+  // native (non-ERC-20) rows from the backend feed, and doubles as the
+  // lookup key into lib/token-icon's bundled icon set.
+  nativeSymbol: string
 }
 
 export const NETWORKS: NetworkInfo[] = [
-  { id: 1, name: 'Ethereum Mainnet', shortName: 'Ethereum' },
-  { id: 56, name: 'BNB Smart Chain', shortName: 'BNB Chain' },
+  { id: 1, name: 'Ethereum Mainnet', shortName: 'Ethereum', nativeSymbol: 'ETH' },
+  { id: 56, name: 'BNB Smart Chain', shortName: 'BNB Chain', nativeSymbol: 'BNB' },
 ]
 
 export const DEFAULT_CHAIN_ID: ChainId = 1

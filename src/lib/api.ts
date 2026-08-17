@@ -71,6 +71,7 @@ export interface WalletOverview {
   transaction_count: number
   first_seen_block: number
   last_seen_block: number
+  contract_name?: string
 }
 
 export interface TransactionSummary {
@@ -86,6 +87,10 @@ export interface TransactionSummary {
 export interface TokenTransferSummary {
   transaction_hash: string
   token_address: string
+  token_symbol?: string
+  // Undefined means the indexer hasn't resolved this token's real
+  // decimals() yet — same convention as TraceEdge.token_decimals.
+  token_decimals?: number
   from_address: string
   to_address: string
   amount: string
@@ -98,6 +103,69 @@ export interface TransactionDetail extends Omit<TransactionSummary, 'value'> {
   gas_price: string
   gas_used: number
   token_transfers: TokenTransferSummary[]
+}
+
+export interface TokenHolding {
+  chain_id: number
+  token_address?: string
+  token_name: string
+  token_symbol: string
+  balance: string
+  decimals: number
+  usd_value?: number
+}
+
+export interface StatsOverview {
+  chain_id: number
+  total_transactions: number
+  total_addresses: number
+  total_entities: number
+  latest_block: number
+  latest_block_time?: string
+}
+
+export interface FeedItem {
+  chain_id: number
+  hash: string
+  from_address: string
+  to_address: string
+  token_name: string
+  token_symbol: string
+  token_address?: string
+  amount: string
+  decimals: number
+  usd_value?: number
+  timestamp: string
+}
+
+export interface FeedPage {
+  items: FeedItem[]
+  page: number
+  limit: number
+  has_next: boolean
+}
+
+export type FeedKind = 'native' | 'token' | undefined
+export type FeedSort = 'newest' | 'oldest'
+
+export interface FeedQuery {
+  // undefined = every supported chain — the recent-activity feed filters
+  // independently of the global network switcher, not from it.
+  chainId?: number
+  kind?: FeedKind
+  sort?: FeedSort
+  page?: number
+  limit?: number
+}
+
+export interface CoinPrice {
+  id: string
+  symbol: string
+  name: string
+  image: string
+  current_price: number
+  price_change_percentage_24h: number
+  market_cap: number
 }
 
 export type TraceDirection = 'out' | 'in' | 'all'
@@ -168,9 +236,28 @@ export const api = {
   listWalletTransfers: (address: string, page: number, limit: number, chainId: number) =>
     requestPaginated<TokenTransferSummary>(`/wallets/${address}/transfers`, { page, limit, chain_id: chainId }),
 
+  // No chainId param, unlike everything else here — holdings always
+  // covers every chain the backend has an RPC endpoint for (see
+  // HoldingsService), independent of whichever chain is selected in the
+  // header's network switcher.
+  getWalletHoldings: (address: string) => request<TokenHolding[]>(`/wallets/${address}/holdings`),
+
   getTransaction: (hash: string, chainId: number) =>
     request<TransactionDetail>(`/transactions/${hash}`, { chain_id: chainId }),
 
   trace: (address: string, query: TraceQuery, chainId: number) =>
     request<TraceResult>(`/trace/${address}`, { ...query, chain_id: chainId }),
+
+  getStats: (chainId: number) => request<StatsOverview>('/stats', { chain_id: chainId }),
+
+  listLatestTransactions: (query: FeedQuery) =>
+    request<FeedPage>('/transactions/latest', {
+      chain_id: query.chainId,
+      kind: query.kind,
+      sort: query.sort,
+      page: query.page,
+      limit: query.limit,
+    }),
+
+  getTopCoins: () => request<CoinPrice[]>('/prices/top'),
 }

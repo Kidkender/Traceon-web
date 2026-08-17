@@ -13,6 +13,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const isToolPage = location.pathname !== '/'
+  // Matches both the empty /trace (nav entry point, no address chosen yet)
+  // and /trace/:address — startsWith('/trace/') alone misses the bare path.
+  const isTracePage = location.pathname === '/trace' || location.pathname.startsWith('/trace/')
   // Only the trace visualizer wants an edge-to-edge canvas with the footer
   // pinned right below it (no page scroll). Every other page — including
   // WalletPage — should be normal document flow: content determines page
@@ -21,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Forcing that same "fill the viewport, pin the footer" behavior onto a
   // short page (like the homepage) just glues the footer to the bottom
   // edge with a stretch of empty space above it, which reads as broken.
-  const fillHeight = location.pathname.startsWith('/trace/')
+  const fillHeight = isTracePage
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const { chainId, setChainId } = useNetwork()
@@ -57,6 +60,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3.5">
           <Link to="/" className="shrink-0">
             <Logo />
+          </Link>
+          <Link
+            to="/trace"
+            className={cn(
+              'shrink-0 text-sm font-medium transition-colors hover:text-foreground',
+              isTracePage ? 'text-foreground' : 'text-muted-foreground'
+            )}
+          >
+            Visualization
           </Link>
           <form onSubmit={handleSearch} className="flex-1">
             <Input
