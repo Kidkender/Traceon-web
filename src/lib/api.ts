@@ -203,12 +203,25 @@ export interface SearchResultItem {
 export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
 export const FLAG_POTENTIAL_WALLET_CLUSTER = 'potential_wallet_cluster'
 
+// One address tagged to an entity, with the chain it was confirmed on — an
+// entity commonly has different addresses per chain (e.g. an exchange's
+// Ethereum hot wallet vs its BSC one), so a bare address string alone isn't
+// enough to route to the right /address/:address page.
+export interface EntityAddressInfo {
+  address: string
+  chain_id: number
+}
+
 export interface EntitySummary {
   id: number
   name: string
   type: string
   description: string
   confidence: number
+  // Only populated by getEntity() below — wallet-overview and trace-node
+  // entity summaries omit it (those already know the one address in
+  // question from context, and never need the entity's full address list).
+  addresses?: EntityAddressInfo[]
 }
 
 export interface LabelSummary {
@@ -288,4 +301,8 @@ export const api = {
   // Chain-agnostic by design — no chain_id param. See discuss.txt: search
   // resolves *which address*, chain selection happens on the address page.
   search: (query: string) => request<SearchResultItem[]>('/search', { q: query }),
+
+  // Chain-agnostic like search — an entity's addresses span whichever
+  // chains it's tagged on, not a single caller-selected one.
+  getEntity: (id: number) => request<EntitySummary>(`/entities/${id}`),
 }

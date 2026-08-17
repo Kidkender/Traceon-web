@@ -159,7 +159,9 @@ export function WalletPage() {
             {overview.data?.entity ? (
               <>
                 <div className="flex items-center gap-2">
-                  <CardTitle className="text-xl">{overview.data.entity.name}</CardTitle>
+                  <Link to={`/entity/${overview.data.entity.id}`} className="hover:text-primary">
+                    <CardTitle className="text-xl">{overview.data.entity.name}</CardTitle>
+                  </Link>
                   <Badge variant="secondary">{overview.data.entity.type}</Badge>
                 </div>
                 <p className="mt-0.5 font-mono text-xs text-muted-foreground">{address}</p>
