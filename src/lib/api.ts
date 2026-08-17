@@ -181,6 +181,10 @@ export interface TraceQuery {
   depth?: number
   min_value?: string
   asset?: string
+  // RFC3339 timestamps, both optional — unbounded on whichever side is
+  // omitted. Backend rejects a malformed value rather than ignoring it.
+  from?: string
+  to?: string
   max_nodes?: number
   max_edges?: number
 }

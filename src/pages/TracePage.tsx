@@ -102,6 +102,24 @@ function parseChainId(value: string | null): ChainId {
   return isChainId(n) ? n : DEFAULT_CHAIN_ID
 }
 
+// The URL stores from/to as RFC3339 (what the backend expects verbatim),
+// but a datetime-local <input> reads/writes its own timezone-naive
+// "YYYY-MM-DDTHH:mm" format — these convert between the two so the input
+// always shows the equivalent local time for whatever's in the URL.
+function isoToLocalInputValue(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localInputValueToIso(value: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+}
+
 export function TracePage() {
   // address is undefined on the bare /trace route (the header's
   // "Visualization" nav entry point) — CardContent below renders an empty
@@ -121,20 +139,23 @@ export function TracePage() {
   const depth = parseDepth(searchParams.get('depth'))
   const minValue = searchParams.get('min_value') ?? '0'
   const chainId = parseChainId(searchParams.get('chain_id'))
-  // Token-address filter has no UI control anymore (removed to cut down on
-  // redundant inputs in the Filters popover), but the trace query still
-  // accepts one — kept as a constant instead of ripping it out of the query
-  // params too, so a future re-add doesn't need to touch the query wiring.
-  const asset = ''
+  // Token contract address — empty means "every asset". RFC3339, matching
+  // what the backend expects directly (no conversion needed on read).
+  const asset = searchParams.get('asset') ?? ''
+  const from = searchParams.get('from') ?? ''
+  const to = searchParams.get('to') ?? ''
 
   // Merges one param into the URL (replace, not push — every filter tweak
   // getting its own back-button entry would make navigating "back" out of
   // the trace page require mashing back through every slider tick instead
-  // of once).
+  // of once). An empty value clears the param entirely rather than storing
+  // an empty string, so optional filters (asset/from/to) round-trip back
+  // to "unset" instead of an empty-but-present query param.
   function updateFilter(key: string, value: string | null) {
     if (value === null) return
     const next = new URLSearchParams(searchParams)
-    next.set(key, value)
+    if (value === '') next.delete(key)
+    else next.set(key, value)
     setSearchParams(next, { replace: true })
   }
 
@@ -159,10 +180,22 @@ export function TracePage() {
   }
 
   const trace = useQuery({
-    queryKey: ['trace', chainId, address, direction, depth, minValue, asset],
+    queryKey: ['trace', chainId, address, direction, depth, minValue, asset, from, to],
     // Non-null assertion is safe here: `enabled` keeps this from firing
     // until address exists.
-    queryFn: () => api.trace(address!, { direction, depth, min_value: minValue, asset: asset || undefined }, chainId),
+    queryFn: () =>
+      api.trace(
+        address!,
+        {
+          direction,
+          depth,
+          min_value: minValue,
+          asset: asset || undefined,
+          from: from || undefined,
+          to: to || undefined,
+        },
+        chainId,
+      ),
     enabled: !!address,
   })
 
@@ -382,7 +415,7 @@ export function TracePage() {
                 <SlidersHorizontal className="size-3.5" />
                 Filters
               </PopoverTrigger>
-              <PopoverContent className="flex w-64 flex-col gap-4">
+              <PopoverContent className="flex w-72 flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Chain</span>
                   <Select value={String(chainId)} onValueChange={(v) => updateFilter('chain_id', v)}>
@@ -427,6 +460,34 @@ export function TracePage() {
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Min value</span>
                   <Input value={minValue} onChange={(e) => updateFilter('min_value', e.target.value)} />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Asset (token contract)</span>
+                  <Input
+                    value={asset}
+                    onChange={(e) => updateFilter('asset', e.target.value.trim())}
+                    placeholder="All assets"
+                    className="font-mono"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">From</span>
+                  <Input
+                    type="datetime-local"
+                    value={isoToLocalInputValue(from)}
+                    onChange={(e) => updateFilter('from', localInputValueToIso(e.target.value))}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">To</span>
+                  <Input
+                    type="datetime-local"
+                    value={isoToLocalInputValue(to)}
+                    onChange={(e) => updateFilter('to', localInputValueToIso(e.target.value))}
+                  />
                 </div>
               </PopoverContent>
             </Popover>
