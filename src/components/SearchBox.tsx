@@ -102,7 +102,12 @@ export function SearchBox() {
           autoComplete="off"
           onKeyDown={handleKeyDown}
         />
-        <ComboboxContent>
+        {/* ui/combobox.tsx's default min-width is anchor-width + extra space
+            reserved for a trailing trigger/clear button — this input has
+            neither (showTrigger/showClear both off), so left as-is the
+            popup renders visibly wider than the search box itself. Pin it
+            to exactly the anchor width instead. */}
+        <ComboboxContent className="min-w-(--anchor-width)">
           <ComboboxEmpty>{suggestions.isLoading ? 'Searching…' : 'No results found.'}</ComboboxEmpty>
           <ComboboxList>
             {(item: SearchResultItem) => (
