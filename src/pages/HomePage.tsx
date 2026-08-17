@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, Blocks, ChevronLeft, ChevronRight, Wallet } from 'lucide-react'
+import { Activity, ArrowRight, Blocks, Check, ChevronLeft, ChevronRight, Copy, Wallet } from 'lucide-react'
 import { useNetwork } from '@/lib/NetworkContext'
 import { getNetwork, NETWORKS, type ChainId } from '@/lib/network'
 import { api, type FeedKind, type FeedSort } from '@/lib/api'
 import { shortenAddress } from '@/lib/address'
 import { formatTokenAmount } from '@/lib/token'
 import { cn } from '@/lib/utils'
+import { formatUsd } from '@/lib/currency'
+import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -24,16 +26,6 @@ type ChainFilter = typeof CHAIN_FILTER_ALL | ChainId
 
 const KIND_FILTER_ALL = 'all'
 type KindFilter = typeof KIND_FILTER_ALL | NonNullable<FeedKind>
-
-// Prices under $1 (small-cap coins, memecoins) need more decimal places to
-// show anything meaningful at all — 2 fixed places would render as $0.00.
-function formatUsd(value: number): string {
-  return value.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: value >= 1 ? 2 : 6,
-  })
-}
 
 const exampleWallets = [
   { label: 'Binance hot wallet', address: '0x28c6c06298d514db089934071355e5743bf21d60' },
@@ -293,14 +285,10 @@ export function HomePage() {
                         </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        <Link to={`/wallets/${tx.from_address}`} className="transition-colors hover:text-primary">
-                          {shortenAddress(tx.from_address)}
-                        </Link>
+                        <AddressCell address={tx.from_address} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        <Link to={`/wallets/${tx.to_address}`} className="transition-colors hover:text-primary">
-                          {shortenAddress(tx.to_address)}
-                        </Link>
+                        <AddressCell address={tx.to_address} />
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1.5 text-xs">
@@ -355,6 +343,38 @@ export function HomePage() {
         </div>
       </section>
     </div>
+  )
+}
+
+// Shortened address linking to the wallet page, with a copy button that
+// only appears on hover — keeps the table dense while still making the
+// full address one click away to copy, without a permanently-visible icon
+// competing with the rest of the row.
+function AddressCell({ address }: { address: string }) {
+  const { copied, copy } = useCopyToClipboard()
+
+  return (
+    <span className="group/addr inline-flex items-center gap-1">
+      <Link to={`/wallets/${address}`} className="transition-colors hover:text-primary">
+        {shortenAddress(address)}
+      </Link>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          copy(address)
+        }}
+        className="opacity-0 transition-opacity group-hover/addr:opacity-100 focus-visible:opacity-100"
+        title="Copy address"
+        aria-label="Copy address"
+      >
+        {copied ? (
+          <Check className="size-3 text-emerald-500" />
+        ) : (
+          <Copy className="size-3 text-muted-foreground hover:text-foreground" />
+        )}
+      </button>
+    </span>
   )
 }
 

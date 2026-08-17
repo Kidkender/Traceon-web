@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
-import { ArrowRight, Check, Copy, Fuel, SlidersHorizontal } from 'lucide-react'
+import { ArrowRight, Check, Copy, Fuel, SlidersHorizontal, Waypoints } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -23,26 +23,12 @@ import {
 } from '@/lib/api'
 import { isValidAddress, shortenAddress } from '@/lib/address'
 import { useNetwork } from '@/lib/NetworkContext'
-import { formatTokenAmount } from '@/lib/token'
+import { ASSUMED_DECIMALS_FALLBACK, formatDisplayAmount, formatTokenAmount } from '@/lib/token'
 import { exchangeVisual, getExchangeIconImage } from '@/lib/exchange'
+import { useCopyToClipboard } from '@/lib/useCopyToClipboard'
 import { TokenIcon } from '@/components/TokenIcon'
 
 const ENTITY_TYPE_EXCHANGE = 'EXCHANGE'
-
-// Most ERC-20 tokens on Ethereum use 18 decimals (it mirrors ETH itself),
-// so assuming 18 when the indexer hasn't resolved a token's real decimals()
-// yet reads correctly far more often than showing the raw base-unit integer
-// does. It's still a guess, not a fact — notably wrong for 6-decimal tokens
-// like USDT/USDC — so every "assumed" render is marked with `~` and a note,
-// never presented as equal footing with a confirmed decimals() value.
-const ASSUMED_DECIMALS_FALLBACK = 18
-
-function formatEdgeAmount(edge: TraceEdge): string {
-  const decimals = edge.token_decimals ?? ASSUMED_DECIMALS_FALLBACK
-  const formatted = formatTokenAmount(edge.amount, decimals)
-  const prefix = edge.token_decimals === undefined ? '~' : ''
-  return edge.token_symbol ? `${prefix}${formatted} ${edge.token_symbol}` : `${prefix}${formatted}`
-}
 
 interface GraphNode {
   id: string
@@ -96,9 +82,14 @@ function createCollideForce(minDistance: number) {
 }
 
 export function TracePage() {
+  // address is undefined on the bare /trace route (the header's
+  // "Visualization" nav entry point) — CardContent below renders an empty
+  // state prompting for one instead of a graph in that case. Every hook
+  // below runs unconditionally regardless (react-hooks/rules-of-hooks:
+  // hooks can never be behind an early return), guarding on `address`
+  // internally (`enabled: !!address`) instead of skipping the call.
   const { address } = useParams<{ address: string }>()
   const navigate = useNavigate()
-  if (!address) return null
 
   const [direction, setDirection] = useState<TraceDirection>('out')
   const [depth, setDepth] = useState(2)
@@ -110,7 +101,7 @@ export function TracePage() {
   const asset = ''
   const [selectedEdge, setSelectedEdge] = useState<TraceEdge | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [addressQuery, setAddressQuery] = useState(address)
+  const [addressQuery, setAddressQuery] = useState(address ?? '')
   const [addressError, setAddressError] = useState<string | null>(null)
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined)
   const { chainId } = useNetwork()
@@ -128,7 +119,10 @@ export function TracePage() {
 
   const trace = useQuery({
     queryKey: ['trace', chainId, address, direction, depth, minValue, asset],
-    queryFn: () => api.trace(address, { direction, depth, min_value: minValue, asset: asset || undefined }, chainId),
+    // Non-null assertion is safe here: `enabled` keeps this from firing
+    // until address exists.
+    queryFn: () => api.trace(address!, { direction, depth, min_value: minValue, asset: asset || undefined }, chainId),
+    enabled: !!address,
   })
 
   const selectedTx = useQuery({
@@ -329,57 +323,67 @@ export function TracePage() {
             )}
           </form>
 
-          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 rounded-full bg-card/90 text-xs backdrop-blur-sm"
-                />
-              }
-            >
-              <SlidersHorizontal className="size-3.5" />
-              Filters
-            </PopoverTrigger>
-            <PopoverContent className="flex w-64 flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">Direction</span>
-                <Select value={direction} onValueChange={(v) => setDirection(v as TraceDirection)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="out">Outgoing</SelectItem>
-                    <SelectItem value="in">Incoming</SelectItem>
-                    <SelectItem value="all">Both</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          {address && (
+            <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 rounded-full bg-card/90 text-xs backdrop-blur-sm"
+                  />
+                }
+              >
+                <SlidersHorizontal className="size-3.5" />
+                Filters
+              </PopoverTrigger>
+              <PopoverContent className="flex w-64 flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Direction</span>
+                  <Select value={direction} onValueChange={(v) => setDirection(v as TraceDirection)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="out">Outgoing</SelectItem>
+                      <SelectItem value="in">Incoming</SelectItem>
+                      <SelectItem value="all">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">Depth: {depth}</span>
-                <Slider
-                  value={[depth]}
-                  min={1}
-                  max={5}
-                  step={1}
-                  onValueChange={(v) => setDepth(Array.isArray(v) ? v[0] : v)}
-                />
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Depth: {depth}</span>
+                  <Slider
+                    value={[depth]}
+                    min={1}
+                    max={5}
+                    step={1}
+                    onValueChange={(v) => setDepth(Array.isArray(v) ? v[0] : v)}
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">Min value</span>
-                <Input value={minValue} onChange={(e) => setMinValue(e.target.value)} />
-              </div>
-            </PopoverContent>
-          </Popover>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Min value</span>
+                  <Input value={minValue} onChange={(e) => setMinValue(e.target.value)} />
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
 
         <CardContent className="min-h-0 flex-1 p-0">
-          {trace.isLoading && <Skeleton className="h-full min-h-[400px] w-full" />}
-          {trace.isError && <p className="p-6 text-sm text-destructive">Failed to load trace.</p>}
-          {trace.data && (
+          {!address && (
+            <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-3 text-center">
+              <Waypoints className="size-8 text-muted-foreground/50" strokeWidth={1.5} />
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Search a wallet address above to visualize its fund-flow graph.
+              </p>
+            </div>
+          )}
+          {address && trace.isLoading && <Skeleton className="h-full min-h-[400px] w-full" />}
+          {address && trace.isError && <p className="p-6 text-sm text-destructive">Failed to load trace.</p>}
+          {address && trace.data && (
             <ForceGraph2D
               ref={fgRef}
               graphData={graphData}
@@ -392,7 +396,7 @@ export function TracePage() {
               linkDirectionalArrowColor={() => '#cbd5e1'}
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={1}
-              linkLabel={(l: GraphLink) => `${formatEdgeAmount(l.edge)} (${shortenAddress(l.edge.token_address)})`}
+              linkLabel={(l: GraphLink) => `${formatDisplayAmount(l.edge)} (${shortenAddress(l.edge.token_address)})`}
               onEngineStop={() => fgRef.current?.zoomToFit(400, 60)}
               onNodeClick={(n: GraphNode) => navigate(`/trace/${n.id}`)}
               onLinkClick={(l: GraphLink) => setSelectedEdge(l.edge)}
@@ -404,30 +408,33 @@ export function TracePage() {
             the filter chips at top-left) instead of a separate row below it
             — bottom-right would sit past the fold now that the canvas
             fills the full viewport height, requiring a scroll to see it. */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1 rounded-lg bg-card/80 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
-          <span className="flex items-center gap-1.5">
-            Root wallet <span className="size-2.5 rounded-full" style={{ backgroundColor: '#34d399' }} />
-          </span>
-          <span className="flex items-center gap-1.5">
-            Potential fund forwarding <span className="size-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
-          </span>
-          <span className="flex items-center gap-1.5">
-            Potential wallet cluster <span className="size-2.5 rounded-full" style={{ backgroundColor: '#a855f7' }} />
-          </span>
-          <span className="flex items-center gap-1.5">
-            Known entity <span className="size-2.5 rounded-full" style={{ backgroundColor: '#38bdf8' }} />
-          </span>
-          <span className="flex items-center gap-1.5">
-            Exchange (badge instead of address — hover to see it)
-            <span
-              className="flex size-2.5 items-center justify-center rounded-full text-[6px] font-bold"
-              style={{ backgroundColor: '#334155', color: '#fff' }}
-            >
-              BN
+        {address && (
+          <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1 rounded-lg bg-card/80 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+            <span className="flex items-center gap-1.5">
+              Root wallet <span className="size-2.5 rounded-full" style={{ backgroundColor: '#34d399' }} />
             </span>
-          </span>
-          <span className="text-muted-foreground/70">Heuristics — not proof of common ownership</span>
-        </div>
+            <span className="flex items-center gap-1.5">
+              Potential fund forwarding{' '}
+              <span className="size-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+            </span>
+            <span className="flex items-center gap-1.5">
+              Potential wallet cluster <span className="size-2.5 rounded-full" style={{ backgroundColor: '#a855f7' }} />
+            </span>
+            <span className="flex items-center gap-1.5">
+              Known entity <span className="size-2.5 rounded-full" style={{ backgroundColor: '#38bdf8' }} />
+            </span>
+            <span className="flex items-center gap-1.5">
+              Exchange (badge instead of address — hover to see it)
+              <span
+                className="flex size-2.5 items-center justify-center rounded-full text-[6px] font-bold"
+                style={{ backgroundColor: '#334155', color: '#fff' }}
+              >
+                BN
+              </span>
+            </span>
+            <span className="text-muted-foreground/70">Heuristics — not proof of common ownership</span>
+          </div>
+        )}
       </Card>
 
       <Sheet open={selectedEdge !== null} onOpenChange={(open) => !open && setSelectedEdge(null)}>
@@ -555,20 +562,14 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false)
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
+  const { copied, copy } = useCopyToClipboard()
 
   return (
     <div className="rounded-lg border p-3">
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <div className="mt-0.5 flex items-center gap-2">
         <p className="min-w-0 flex-1 truncate font-mono text-xs">{value}</p>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" onClick={handleCopy}>
+        <Button variant="ghost" size="icon-sm" className="shrink-0" onClick={() => copy(value)}>
           {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
         </Button>
       </div>

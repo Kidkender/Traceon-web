@@ -10,6 +10,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/wallets/:address" element={<WalletPage />} />
+        <Route path="/trace" element={<TracePage />} />
         <Route path="/trace/:address" element={<TracePage />} />
       </Routes>
     </AppShell>

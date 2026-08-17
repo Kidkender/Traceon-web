@@ -71,6 +71,7 @@ export interface WalletOverview {
   transaction_count: number
   first_seen_block: number
   last_seen_block: number
+  contract_name?: string
 }
 
 export interface TransactionSummary {
@@ -86,6 +87,10 @@ export interface TransactionSummary {
 export interface TokenTransferSummary {
   transaction_hash: string
   token_address: string
+  token_symbol?: string
+  // Undefined means the indexer hasn't resolved this token's real
+  // decimals() yet — same convention as TraceEdge.token_decimals.
+  token_decimals?: number
   from_address: string
   to_address: string
   amount: string
@@ -98,6 +103,16 @@ export interface TransactionDetail extends Omit<TransactionSummary, 'value'> {
   gas_price: string
   gas_used: number
   token_transfers: TokenTransferSummary[]
+}
+
+export interface TokenHolding {
+  chain_id: number
+  token_address?: string
+  token_name: string
+  token_symbol: string
+  balance: string
+  decimals: number
+  usd_value?: number
 }
 
 export interface StatsOverview {
@@ -220,6 +235,12 @@ export const api = {
 
   listWalletTransfers: (address: string, page: number, limit: number, chainId: number) =>
     requestPaginated<TokenTransferSummary>(`/wallets/${address}/transfers`, { page, limit, chain_id: chainId }),
+
+  // No chainId param, unlike everything else here — holdings always
+  // covers every chain the backend has an RPC endpoint for (see
+  // HoldingsService), independent of whichever chain is selected in the
+  // header's network switcher.
+  getWalletHoldings: (address: string) => request<TokenHolding[]>(`/wallets/${address}/holdings`),
 
   getTransaction: (hash: string, chainId: number) =>
     request<TransactionDetail>(`/transactions/${hash}`, { chain_id: chainId }),
