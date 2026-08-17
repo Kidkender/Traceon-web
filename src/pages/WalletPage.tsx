@@ -14,6 +14,7 @@ import { formatUsd } from '@/lib/currency'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TokenIcon } from '@/components/TokenIcon'
 import { AttributionBadge } from '@/components/AttributionBadge'
+import { RiskAssessmentCard } from '@/components/RiskAssessmentCard'
 
 const TOP_ASSET_COUNT = 5
 
@@ -230,6 +231,8 @@ export function WalletPage() {
           {overview.isError && <p className="text-sm text-destructive">Wallet not found.</p>}
         </CardContent>
       </Card>
+
+      {overview.data && <RiskAssessmentCard address={address} chainId={chainId} />}
 
       <Tabs
         value={tab}
