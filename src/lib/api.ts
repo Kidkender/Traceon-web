@@ -272,6 +272,50 @@ export interface TraceResult {
   truncated: boolean
 }
 
+export interface PathQuery {
+  asset?: string
+  // RFC3339, both optional. Named from_time/to_time (not from/to) because
+  // those are already the two address params on this endpoint.
+  from_time?: string
+  to_time?: string
+  max_hops?: number
+  limit?: number
+}
+
+// A "path" here is observed transaction connectivity between two
+// addresses, not proof that specific funds traveled every hop — value
+// merges with an address's existing balance on arrival in an account-based
+// model, so this is never called a "fund path" anywhere in this codebase.
+export interface Path {
+  hop_count: number
+  time_span_seconds: number
+  // A ranking signal (hops close together in time), not a probability —
+  // see PathMeta.complete for the actual honesty story around this result.
+  tight_timing: boolean
+  edges: TraceEdge[]
+}
+
+export interface PathMeta {
+  // Distinguishes "searched exhaustively, no path exists under these
+  // filters" (true) from "search budget ran out first" (false) — a hub
+  // address whose fan-out exceeds max_fanout_per_node can produce
+  // complete:false with zero paths, which reads very differently than a
+  // genuine dead end.
+  complete: boolean
+  nodes_expanded: number
+  max_nodes_expanded: number
+  max_hops: number
+  max_fanout_per_node: number
+}
+
+export interface PathResult {
+  from: string
+  to: string
+  chain_id: number
+  paths: Path[]
+  meta: PathMeta
+}
+
 // Every call below takes the caller's currently-selected chain_id, sourced
 // from whichever page owns that choice now (chain is per-page state, not a
 // global header switcher — see WalletPage/TracePage's local chainId) so
@@ -300,6 +344,9 @@ export const api = {
 
   trace: (address: string, query: TraceQuery, chainId: number) =>
     request<TraceResult>(`/trace/${address}`, { ...query, chain_id: chainId }),
+
+  findPath: (from: string, to: string, query: PathQuery, chainId: number) =>
+    request<PathResult>('/trace/paths', { ...query, from, to, chain_id: chainId }),
 
   getStats: (chainId: number) => request<StatsOverview>('/stats', { chain_id: chainId }),
 
