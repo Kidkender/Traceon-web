@@ -6,7 +6,15 @@ import { isValidAddress, shortenAddress } from '@/lib/address'
 import { useDebounce } from '@/lib/useDebounce'
 import { getNetwork, type ChainId } from '@/lib/network'
 import { TokenIcon } from '@/components/TokenIcon'
-import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox'
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxAnchor,
+} from '@/components/ui/combobox'
 
 const MIN_QUERY_LENGTH = 2
 const DEBOUNCE_MS = 250
@@ -28,6 +36,12 @@ export function SearchBox() {
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Base UI's popup width defaults to the raw <input> element's width, which
+  // is narrower than the visible bordered search box around it (that empty
+  // trailing InputGroupAddon plus box padding eat a few px) — anchoring to
+  // this outer wrapper instead makes the dropdown match what the user
+  // actually sees as "the search box".
+  const anchorRef = useComboboxAnchor()
 
   // Cmd/Ctrl+K jumps to the search box from anywhere in the app — a
   // familiar shortcut on tools like this (Etherscan, Arkham) for power
@@ -78,7 +92,7 @@ export function SearchBox() {
   const items = suggestions.data ?? []
 
   return (
-    <div className="max-w-xl flex-1">
+    <div ref={anchorRef} className="max-w-xl flex-1">
       <Combobox<SearchResultItem>
         items={items}
         filter={null}
@@ -105,9 +119,10 @@ export function SearchBox() {
         {/* ui/combobox.tsx's default min-width is anchor-width + extra space
             reserved for a trailing trigger/clear button — this input has
             neither (showTrigger/showClear both off), so left as-is the
-            popup renders visibly wider than the search box itself. Pin it
-            to exactly the anchor width instead. */}
-        <ComboboxContent className="min-w-(--anchor-width)">
+            popup renders wider than the anchor. Pin it to exactly the
+            anchor width instead, and anchor to the outer wrapper (see
+            anchorRef above) rather than the default of the raw input. */}
+        <ComboboxContent anchor={anchorRef} className="min-w-(--anchor-width)">
           <ComboboxEmpty>{suggestions.isLoading ? 'Searching…' : 'No results found.'}</ComboboxEmpty>
           <ComboboxList>
             {(item: SearchResultItem) => (
