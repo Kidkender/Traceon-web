@@ -7,7 +7,6 @@ import { useDebounce } from '@/lib/useDebounce'
 import { getNetwork, type ChainId } from '@/lib/network'
 import { TokenIcon } from '@/components/TokenIcon'
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox'
-import { InputGroupAddon } from '@/components/ui/input-group'
 
 const MIN_QUERY_LENGTH = 2
 const DEBOUNCE_MS = 250
@@ -102,15 +101,7 @@ export function SearchBox() {
           showTrigger={false}
           autoComplete="off"
           onKeyDown={handleKeyDown}
-        >
-          {!query && (
-            <InputGroupAddon align="inline-end">
-              <kbd className="hidden items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground sm:flex">
-                <span>⌘</span>K
-              </kbd>
-            </InputGroupAddon>
-          )}
-        </ComboboxInput>
+        />
         <ComboboxContent>
           <ComboboxEmpty>{suggestions.isLoading ? 'Searching…' : 'No results found.'}</ComboboxEmpty>
           <ComboboxList>
