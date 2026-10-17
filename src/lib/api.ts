@@ -207,6 +207,35 @@ export interface SearchResultItem {
 export const FLAG_POTENTIAL_FUND_FORWARDING = 'potential_fund_forwarding'
 export const FLAG_POTENTIAL_WALLET_CLUSTER = 'potential_wallet_cluster'
 
+export type RiskLevel = 'low' | 'medium' | 'high'
+
+// Evidence shape is intentionally per-Type (see traceon-api's
+// dto.RiskSignal) — ratio/delay_seconds for fund_forwarding,
+// cluster_size/block_window for wallet_cluster, hop_count/entity_name for
+// entity_exposure, etc. Kept as a loose record here rather than a
+// discriminated union so the UI can render "unknown signal type" gracefully
+// if the backend adds one this build doesn't know about yet.
+export interface RiskSignal {
+  type: string
+  severity: 'low' | 'medium' | 'high'
+  evidence?: Record<string, unknown>
+  source: string
+  confidence: number
+}
+
+// Score is an internal ranking value (0-100), never a probability — see
+// `disclaimer`, which every RiskAssessment carries and the UI must always
+// show alongside level/score per disscuss3.txt's caution against
+// overclaiming from on-chain signals alone.
+export interface RiskAssessment {
+  address: string
+  chain_id: number
+  level: RiskLevel
+  score: number
+  signals: RiskSignal[]
+  disclaimer: string
+}
+
 // One address tagged to an entity, with the chain it was confirmed on — an
 // entity commonly has different addresses per chain (e.g. an exchange's
 // Ethereum hot wallet vs its BSC one), so a bare address string alone isn't
@@ -347,6 +376,9 @@ export const api = {
 
   findPath: (from: string, to: string, query: PathQuery, chainId: number) =>
     request<PathResult>('/trace/paths', { ...query, from, to, chain_id: chainId }),
+
+  getRiskAssessment: (address: string, chainId: number) =>
+    request<RiskAssessment>('/risk/assess', { address, chain_id: chainId }),
 
   getStats: (chainId: number) => request<StatsOverview>('/stats', { chain_id: chainId }),
 
